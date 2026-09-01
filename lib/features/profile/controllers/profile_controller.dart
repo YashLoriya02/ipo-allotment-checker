@@ -48,6 +48,13 @@ class ProfileController extends GetxController {
       return 'Enter a valid PAN, e.g. ABCDE1234F.';
     }
 
+    for (final profile in profiles) {
+      final savedPan = await _secureStorage.readPan(profile.id);
+      if (savedPan?.toUpperCase().trim() == normalizedPan) {
+        return 'This PAN is already saved as “${profile.name}”.';
+      }
+    }
+
     final id = DateTime.now().microsecondsSinceEpoch.toString();
     final profile = PanProfile(
       id: id,
@@ -62,6 +69,25 @@ class ProfileController extends GetxController {
     return null;
   }
 
+  Future<String?> renameProfile(PanProfile profile, String name) async {
+    final normalized = name.trim();
+    if (normalized.length < 2) return 'Enter a profile name.';
+
+    final duplicateName = profiles.any(
+      (item) => item.id != profile.id &&
+          item.name.toLowerCase() == normalized.toLowerCase(),
+    );
+    if (duplicateName) return 'Another PAN profile already uses this name.';
+
+    final index = profiles.indexWhere((item) => item.id == profile.id);
+    if (index == -1) return 'PAN profile no longer exists.';
+
+    profiles[index] = profile.copyWith(name: normalized);
+    profiles.refresh();
+    await _persist();
+    return null;
+  }
+
   Future<void> setDefault(String id) async {
     profiles.assignAll(
       profiles
@@ -70,6 +96,20 @@ class ProfileController extends GetxController {
     );
     await _persist();
   }
+
+  int usageCount(String profileId) => _storage
+      .readApplications()
+      .where((application) => application.panProfileId == profileId)
+      .length;
+
+  int activeUsageCount(String profileId) => _storage
+      .readApplications()
+      .where(
+        (application) =>
+            application.panProfileId == profileId &&
+            !application.isCompleted,
+      )
+      .length;
 
   Future<void> deleteProfile(PanProfile profile) async {
     await _secureStorage.deletePan(profile.id);
@@ -83,7 +123,8 @@ class ProfileController extends GetxController {
     await _persist();
   }
 
-  PanProfile? byId(String id) => profiles.firstWhereOrNull((item) => item.id == id);
+  PanProfile? byId(String id) =>
+      profiles.firstWhereOrNull((item) => item.id == id);
 
   Future<void> _persist() => _storage.writeProfiles(profiles);
 }

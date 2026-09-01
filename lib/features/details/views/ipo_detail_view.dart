@@ -5,10 +5,9 @@ import '../../../app/theme/app_colors.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/status_pill.dart';
 import '../../../data/models/ipo.dart';
-import '../../../data/models/pan_profile.dart';
 import '../../../data/repositories/ipo_repository.dart';
 import '../../applied/controllers/applied_controller.dart';
-import '../../profile/controllers/profile_controller.dart';
+import '../widgets/apply_ipo_dialog.dart';
 
 class IpoDetailView extends StatelessWidget {
   const IpoDetailView({super.key});
@@ -30,11 +29,11 @@ class IpoDetailView extends StatelessWidget {
               slivers: [
                 SliverAppBar(
                   pinned: true,
-                  title: Text(ipo.symbol),
+                  title: Text(ipo.symbol.isEmpty ? 'IPO details' : ipo.symbol),
                   actions: [
                     if (snapshot.connectionState == ConnectionState.waiting)
                       const Padding(
-                        padding: EdgeInsets.only(right: 8),
+                        padding: EdgeInsets.only(right: 16),
                         child: Center(
                           child: SizedBox(
                             width: 18,
@@ -43,12 +42,6 @@ class IpoDetailView extends StatelessWidget {
                           ),
                         ),
                       ),
-                    IconButton(
-                      tooltip: 'Share',
-                      onPressed: () {},
-                      icon: const Icon(Icons.ios_share_rounded),
-                    ),
-                    const SizedBox(width: 6),
                   ],
                 ),
                 SliverPadding(
@@ -56,19 +49,21 @@ class IpoDetailView extends StatelessWidget {
                   sliver: SliverList(
                     delegate: SliverChildListDelegate([
                       _Hero(ipo: ipo),
+                      const SizedBox(height: 12),
+                      _ContextBanner(ipo: ipo),
                       const SizedBox(height: 14),
                       _QuickStats(ipo: ipo),
-                      if (ipo.totalSubscription != null ||
-                          ipo.listingPrice != null ||
-                          ipo.industry != null ||
-                          ipo.listingExchange != null) ...[
+                      if (_hasMarketData(ipo)) ...[
                         const SizedBox(height: 14),
                         _MarketSnapshot(ipo: ipo),
                       ],
                       const SizedBox(height: 14),
                       _Timeline(ipo: ipo),
-                      const SizedBox(height: 14),
-                      _RegistrarCard(ipo: ipo),
+                      if (ipo.registrarName != null ||
+                          ipo.registrarCode != null) ...[
+                        const SizedBox(height: 14),
+                        _RegistrarCard(ipo: ipo),
+                      ],
                       if (snapshot.hasError) ...[
                         const SizedBox(height: 14),
                         _DetailsError(message: snapshot.error.toString()),
@@ -89,9 +84,15 @@ class IpoDetailView extends StatelessWidget {
                   top: BorderSide(color: Theme.of(context).dividerColor),
                 ),
               ),
-              child: Obx(
-                () => FilledButton.icon(
-                  onPressed: () => _showApplySheet(context, ipo),
+              child: Obx(() {
+                final count = applied.appliedProfileCount(ipo.id);
+                return FilledButton.icon(
+                  onPressed: () => Get.dialog(
+                    ApplyIpoDialog(ipo: ipo),
+                    barrierDismissible: true,
+                    barrierColor: Colors.black.withValues(alpha: 0.68),
+                    useSafeArea: true,
+                  ),
                   style: FilledButton.styleFrom(
                     minimumSize: const Size.fromHeight(54),
                     shape: RoundedRectangleBorder(
@@ -99,17 +100,17 @@ class IpoDetailView extends StatelessWidget {
                     ),
                   ),
                   icon: Icon(
-                    applied.isApplied(ipo.id)
-                        ? Icons.add_rounded
+                    count > 0
+                        ? Icons.person_add_alt_1_rounded
                         : Icons.bookmark_add_rounded,
                   ),
                   label: Text(
-                    applied.isApplied(ipo.id)
-                        ? 'Add another PAN'
+                    count > 0
+                        ? 'Add another PAN · $count tracked'
                         : 'I applied to this IPO',
                   ),
-                ),
-              ),
+                );
+              }),
             ),
           ),
         );
@@ -117,150 +118,12 @@ class IpoDetailView extends StatelessWidget {
     );
   }
 
-  void _showApplySheet(BuildContext context, Ipo ipo) {
-    final profileController = Get.find<ProfileController>();
-    final appliedController = Get.find<AppliedController>();
-
-    if (profileController.profiles.isEmpty) {
-      Get.bottomSheet(
-        Container(
-          padding: const EdgeInsets.fromLTRB(22, 18, 22, 28),
-          decoration: BoxDecoration(
-            color: Theme.of(context).cardColor,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-          ),
-          child: SafeArea(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const _SheetHandle(),
-                const SizedBox(height: 20),
-                Icon(
-                  Icons.badge_outlined,
-                  size: 36,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'Add a PAN profile first',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: 7),
-                Text(
-                  'Your PAN is stored securely on this device and is never shown in full.',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 20),
-                FilledButton(
-                  onPressed: () {
-                    Get.back();
-                    profileController.openAddProfileSheet();
-                  },
-                  child: const Text('Add PAN profile'),
-                ),
-              ],
-            ),
-          ),
-        ),
-        isScrollControlled: true,
-      );
-      return;
-    }
-
-    Get.bottomSheet(
-      Container(
-        padding: const EdgeInsets.fromLTRB(18, 12, 18, 26),
-        decoration: BoxDecoration(
-          color: Theme.of(context).cardColor,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-        ),
-        child: SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Center(child: _SheetHandle()),
-              const SizedBox(height: 16),
-              Text(
-                'Applied using',
-                style: Theme.of(context).textTheme.headlineSmall,
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Choose the PAN profile used for ${ipo.symbol}.',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(height: 16),
-              Obx(
-                () => Column(
-                  children: profileController.profiles.map((
-                    PanProfile profile,
-                  ) {
-                    final alreadyAdded = appliedController.isAppliedWithProfile(
-                      ipo.id,
-                      profile.id,
-                    );
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 9),
-                      child: ListTile(
-                        onTap: alreadyAdded
-                            ? null
-                            : () => appliedController.addApplication(
-                                ipo,
-                                profile,
-                              ),
-                        tileColor: Theme.of(context)
-                            .colorScheme
-                            .surfaceContainerHighest
-                            .withValues(alpha: 0.45),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(17),
-                        ),
-                        leading: CircleAvatar(
-                          backgroundColor: Theme.of(
-                            context,
-                          ).colorScheme.primary.withValues(alpha: 0.10),
-                          child: Icon(
-                            Icons.person_rounded,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                        ),
-                        title: Text(
-                          profile.name,
-                          style: const TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                        subtitle: Text(profile.maskedPan),
-                        trailing: alreadyAdded
-                            ? const Icon(
-                                Icons.check_circle_rounded,
-                                color: AppColors.mint,
-                              )
-                            : const Icon(Icons.chevron_right_rounded),
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ),
-              TextButton.icon(
-                onPressed: () {
-                  Get.back();
-                  profileController.openAddProfileSheet();
-                },
-                icon: const Icon(Icons.add_rounded),
-                label: const Text('Add another PAN profile'),
-              ),
-            ],
-          ),
-        ),
-      ),
-      isScrollControlled: true,
-    );
-  }
+  static bool _hasMarketData(Ipo ipo) =>
+      ipo.totalSubscription != null ||
+      ipo.listingPrice != null ||
+      ipo.industry != null ||
+      ipo.listingExchange != null ||
+      ipo.cutOffPrice != null;
 }
 
 class _Hero extends StatelessWidget {
@@ -307,25 +170,30 @@ class _Hero extends StatelessWidget {
           const SizedBox(height: 18),
           Text(ipo.name, style: Theme.of(context).textTheme.headlineSmall),
           const SizedBox(height: 8),
-          Row(
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
             children: [
               _Tag(label: ipo.typeLabel),
-              const SizedBox(width: 8),
               _Tag(label: ipo.issueType),
+              if (ipo.listingExchange != null)
+                _Tag(label: ipo.listingExchange!),
             ],
           ),
-          const SizedBox(height: 22),
-          Text(
-            'Price band',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
+          if (ipo.minPrice != null || ipo.maxPrice != null) ...[
+            const SizedBox(height: 22),
+            Text(
+              'Price band',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            Formatters.priceBand(ipo),
-            style: Theme.of(context).textTheme.headlineSmall,
-          ),
+            const SizedBox(height: 4),
+            Text(
+              Formatters.priceBand(ipo),
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+          ],
           if (ipo.minimumInvestment != null) ...[
             const SizedBox(height: 5),
             Text(
@@ -341,12 +209,124 @@ class _Hero extends StatelessWidget {
   }
 }
 
+class _ContextBanner extends StatelessWidget {
+  const _ContextBanner({required this.ipo});
+  final Ipo ipo;
+
+  @override
+  Widget build(BuildContext context) {
+    final info = _info();
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 13),
+      decoration: BoxDecoration(
+        color: info.color.withValues(alpha: 0.09),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: info.color.withValues(alpha: 0.18)),
+      ),
+      child: Row(
+        children: [
+          Icon(info.icon, color: info.color, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  info.title,
+                  style: TextStyle(
+                    color: info.color,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                if (info.subtitle != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    info.subtitle!,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  ({String title, String? subtitle, IconData icon, Color color}) _info() {
+    if (ipo.status == IpoStatus.listed) {
+      final gain = ipo.listingGainPercent;
+      return (
+        title: ipo.listingDate == null
+            ? 'Listed'
+            : Formatters.isToday(ipo.listingDate)
+            ? 'Listed today'
+            : 'Listed ${Formatters.shortDate(ipo.listingDate)}',
+        subtitle: ipo.listingPrice == null
+            ? null
+            : 'Opened at ${Formatters.money(ipo.listingPrice)}${gain == null ? '' : ' · ${gain >= 0 ? '+' : ''}${gain.toStringAsFixed(2)}% vs issue price'}',
+        icon: Icons.show_chart_rounded,
+        color: (gain ?? 0) >= 0 ? AppColors.mint : AppColors.rose,
+      );
+    }
+
+    if (ipo.status == IpoStatus.closed) {
+      return (
+        title: ipo.allotmentDate == null
+            ? 'Issue closed'
+            : Formatters.eventRelative('Allotment', ipo.allotmentDate),
+        subtitle: ipo.listingDate == null
+            ? null
+            : '${Formatters.eventRelative('Listing', ipo.listingDate)} · ${Formatters.fullDate(ipo.listingDate)}',
+        icon: Formatters.isToday(ipo.allotmentDate)
+            ? Icons.notifications_active_rounded
+            : Icons.hourglass_bottom_rounded,
+        color: AppColors.amber,
+      );
+    }
+
+    if (ipo.status == IpoStatus.upcoming) {
+      return (
+        title: Formatters.eventRelative('Opens', ipo.openDate),
+        subtitle: ipo.openDate == null
+            ? null
+            : Formatters.fullDate(ipo.openDate),
+        icon: Icons.event_available_outlined,
+        color: AppColors.brand,
+      );
+    }
+
+    return (
+      title: Formatters.eventRelative('Closes', ipo.closeDate),
+      subtitle: ipo.closeDate == null
+          ? null
+          : Formatters.fullDate(ipo.closeDate),
+      icon: Icons.timelapse_rounded,
+      color: AppColors.mint,
+    );
+  }
+}
+
 class _QuickStats extends StatelessWidget {
   const _QuickStats({required this.ipo});
   final Ipo ipo;
 
   @override
   Widget build(BuildContext context) {
+    final stats = <({String label, String value})>[
+      if (ipo.lotSize != null) (label: 'Lot size', value: '${ipo.lotSize}'),
+      if (ipo.issueSizeCrore != null)
+        (
+          label: 'Issue size',
+          value: '₹${ipo.issueSizeCrore!.toStringAsFixed(1)} Cr',
+        ),
+      if (ipo.registrarCode != null)
+        (label: 'Registrar', value: ipo.registrarCode!),
+    ];
+
+    if (stats.isEmpty) return const SizedBox.shrink();
+
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
@@ -356,25 +336,12 @@ class _QuickStats extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Expanded(
-            child: _Stat(
-              label: 'Lot size',
-              value: ipo.lotSize?.toString() ?? '—',
+          for (var i = 0; i < stats.length; i++) ...[
+            Expanded(
+              child: _Stat(label: stats[i].label, value: stats[i].value),
             ),
-          ),
-          _Divider(),
-          Expanded(
-            child: _Stat(
-              label: 'Issue size',
-              value: ipo.issueSizeCrore == null
-                  ? '—'
-                  : '₹${ipo.issueSizeCrore!.toStringAsFixed(1)} Cr',
-            ),
-          ),
-          _Divider(),
-          Expanded(
-            child: _Stat(label: 'Registrar', value: ipo.registrarCode ?? '—'),
-          ),
+            if (i != stats.length - 1) const _Divider(),
+          ],
         ],
       ),
     );
@@ -404,7 +371,9 @@ class _MarketSnapshot extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  'Market snapshot',
+                  ipo.status == IpoStatus.listed
+                      ? 'Listing performance'
+                      : 'Market snapshot',
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
               ),
@@ -423,7 +392,7 @@ class _MarketSnapshot extends StatelessWidget {
           ],
           const SizedBox(height: 18),
           Wrap(
-            runSpacing: 16,
+            runSpacing: 12,
             spacing: 12,
             children: [
               if (ipo.totalSubscription != null)
@@ -433,17 +402,14 @@ class _MarketSnapshot extends StatelessWidget {
                 ),
               if (ipo.cutOffPrice != null)
                 _SnapshotMetric(
-                  label: 'Cut-off price',
+                  label: 'Issue / cut-off',
                   value: Formatters.money(ipo.cutOffPrice),
                 ),
               if (ipo.listingPrice != null)
                 _SnapshotMetric(
                   label: 'Listing price',
                   value:
-                      Formatters.money(ipo.listingPrice) +
-                      (gain != null
-                          ? ' (${gain >= 0 ? '+' : ''}${gain.toStringAsFixed(2)}%)'
-                          : ''),
+                      '${Formatters.money(ipo.listingPrice)} (${gain != null && gain >= 0 ? '+' : ''}${(gain ?? 0).toStringAsFixed(2)}%)',
                   valueColor: gainColor,
                 ),
             ],
@@ -548,12 +514,10 @@ class _TimelineRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final primary = Theme.of(context).colorScheme.primary;
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final eventDate = date == null
-        ? null
-        : DateTime(date!.year, date!.month, date!.day);
+    final today = Formatters.dateOnly(DateTime.now());
+    final eventDate = date == null ? null : Formatters.dateOnly(date!);
     final hasHappened = eventDate != null && !eventDate.isAfter(today);
+    final isToday = eventDate == today;
 
     return IntrinsicHeight(
       child: Row(
@@ -565,8 +529,8 @@ class _TimelineRow extends StatelessWidget {
               children: [
                 AnimatedContainer(
                   duration: const Duration(milliseconds: 180),
-                  width: 11,
-                  height: 11,
+                  width: isToday ? 13 : 11,
+                  height: isToday ? 13 : 11,
                   decoration: BoxDecoration(
                     color: hasHappened ? primary : Colors.transparent,
                     shape: BoxShape.circle,
@@ -575,8 +539,16 @@ class _TimelineRow extends StatelessWidget {
                           ? Theme.of(context).colorScheme.onSurfaceVariant
                                 .withValues(alpha: 0.35)
                           : primary,
-                      width: 1.6,
+                      width: isToday ? 2 : 1.6,
                     ),
+                    boxShadow: isToday
+                        ? [
+                            BoxShadow(
+                              color: primary.withValues(alpha: 0.24),
+                              blurRadius: 8,
+                            ),
+                          ]
+                        : null,
                   ),
                 ),
                 if (!isLast)
@@ -596,6 +568,7 @@ class _TimelineRow extends StatelessWidget {
             child: Padding(
               padding: EdgeInsets.only(bottom: isLast ? 0 : 20),
               child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(
                     child: Text(
@@ -603,11 +576,33 @@ class _TimelineRow extends StatelessWidget {
                       style: const TextStyle(fontWeight: FontWeight.w700),
                     ),
                   ),
-                  Text(
-                    Formatters.fullDate(date),
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        Formatters.fullDate(date),
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      if (date != null) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          Formatters.relativeDay(date),
+                          style: TextStyle(
+                            color: isToday
+                                ? primary
+                                : Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
+                            fontSize: 10,
+                            fontWeight: isToday
+                                ? FontWeight.w800
+                                : FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ],
               ),
@@ -661,9 +656,20 @@ class _RegistrarCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  ipo.registrarName ?? 'Not available yet',
-                  style: const TextStyle(fontWeight: FontWeight.w700),
+                  ipo.registrarName ?? ipo.registrarCode!,
+                  style: const TextStyle(fontWeight: FontWeight.w800),
                 ),
+                if (ipo.registrarCode != null &&
+                    ipo.registrarName != null &&
+                    !ipo.registrarName!.toUpperCase().contains(
+                      ipo.registrarCode!.toUpperCase(),
+                    )) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    ipo.registrarCode!,
+                    style: Theme.of(context).textTheme.labelSmall,
+                  ),
+                ],
               ],
             ),
           ),
@@ -675,7 +681,6 @@ class _RegistrarCard extends StatelessWidget {
 
 class _DetailsError extends StatelessWidget {
   const _DetailsError({required this.message});
-
   final String message;
 
   @override
@@ -698,7 +703,7 @@ class _DetailsError extends StatelessWidget {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              'Live IPO details could not be refreshed. Showing the latest list data instead.\n$message',
+              'Live details could not be refreshed. Showing saved/basic IPO data instead.\n$message',
               style: Theme.of(
                 context,
               ).textTheme.bodySmall?.copyWith(height: 1.45),
@@ -759,6 +764,8 @@ class _Stat extends StatelessWidget {
 }
 
 class _Divider extends StatelessWidget {
+  const _Divider();
+
   @override
   Widget build(BuildContext context) => Container(
     width: 1,
@@ -766,20 +773,4 @@ class _Divider extends StatelessWidget {
     margin: const EdgeInsets.symmetric(horizontal: 12),
     color: Theme.of(context).dividerColor,
   );
-}
-
-class _SheetHandle extends StatelessWidget {
-  const _SheetHandle();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 38,
-      height: 4,
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.16),
-        borderRadius: BorderRadius.circular(99),
-      ),
-    );
-  }
 }

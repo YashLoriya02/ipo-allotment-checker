@@ -1,17 +1,21 @@
-import 'package:app/constants/token.dart';
+import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
 
+import '../../core/constants/token.dart';
 import '../models/ipo.dart';
+import '../services/local_storage_service.dart';
 import 'ipo_repository.dart';
 
 class UpstoxIpoRepository implements IpoRepository {
   UpstoxIpoRepository({String token = UPSTOX_ANALYTICS_TOKEN})
-    : _token = token.trim();
+    : _token = token.trim(),
+      _storage = Get.find<LocalStorageService>();
 
   static const _baseUrl = 'https://api.upstox.com/v2';
   static const _pageSize = 30;
 
   final String _token;
+  final LocalStorageService _storage;
   final GetConnect _client = GetConnect(timeout: const Duration(seconds: 25));
   final Map<String, Ipo> _detailsCache = <String, Ipo>{};
 
@@ -25,14 +29,18 @@ class UpstoxIpoRepository implements IpoRepository {
     _ensureConfigured();
 
     final groups = await Future.wait(IpoStatus.values.map(_getIposByStatus));
-
     final items = groups.expand((group) => group).toList();
 
-    // The API buckets are mutually exclusive, but keep the result defensive
-    // against duplicate records should upstream behaviour ever change.
+    final persisted = <String, Ipo>{
+      for (final ipo in _storage.readCachedIpos()) ipo.id: ipo,
+    };
+
     final byId = <String, Ipo>{};
     for (final ipo in items) {
-      byId[ipo.id] = ipo;
+      final cached = persisted[ipo.id];
+      byId[ipo.id] = cached?.isDetailed == true
+          ? ipo.mergeDetailsFrom(cached!)
+          : ipo;
     }
 
     return List<Ipo>.unmodifiable(byId.values);
@@ -42,21 +50,33 @@ class UpstoxIpoRepository implements IpoRepository {
   Future<Ipo?> getById(String id) async {
     _ensureConfigured();
 
-    final cached = _detailsCache[id];
-    if (cached != null) return cached;
+    final memoryCached = _detailsCache[id];
+    if (memoryCached != null) return memoryCached;
 
-    final response = await _client.get(
-      '$_baseUrl/ipos/${Uri.encodeComponent(id)}',
-      headers: _headers,
-    );
+    final persistedFallback = _storage.readCachedIpoById(id);
 
-    final body = _validatedBody(response, context: 'IPO details');
-    final data = body['data'];
-    if (data is! Map) return null;
+    try {
+      final response = await _client.get(
+        '$_baseUrl/ipos/${Uri.encodeComponent(id)}',
+        headers: _headers,
+      );
 
-    final ipo = _mapIpo(Map<String, dynamic>.from(data));
-    _detailsCache[id] = ipo;
-    return ipo;
+      final body = _validatedBody(response, context: 'IPO details');
+      final data = body['data'];
+      if (data is! Map) return persistedFallback;
+
+      final ipo = _mapIpo(Map<String, dynamic>.from(data), isDetailed: true);
+
+      _detailsCache[id] = ipo;
+      await _storage.upsertCachedIpo(ipo);
+      return ipo;
+    } catch (error) {
+      if (persistedFallback != null) {
+        debugPrint('Upstox detail refresh failed; using local cache: $error');
+        return persistedFallback;
+      }
+      rethrow;
+    }
   }
 
   Future<List<Ipo>> _getIposByStatus(IpoStatus status) async {
@@ -79,12 +99,14 @@ class UpstoxIpoRepository implements IpoRepository {
         response,
         context: '${_statusToApi(status)} IPOs',
       );
-      final data = body['data'];
 
+      final data = body['data'];
       if (data is List) {
         for (final raw in data) {
           if (raw is Map) {
-            items.add(_mapIpo(Map<String, dynamic>.from(raw)));
+            items.add(
+              _mapIpo(Map<String, dynamic>.from(raw), isDetailed: false),
+            );
           }
         }
       }
@@ -109,17 +131,19 @@ class UpstoxIpoRepository implements IpoRepository {
   }) {
     if (!response.isOk) {
       final upstream = _extractErrorMessage(response.body);
-      throw UpstoxIpoException(
-        upstream ??
-            'Unable to fetch $context from Upstox (${response.statusCode ?? 'unknown'}).',
-        statusCode: response.statusCode,
-      );
+      final message =
+          upstream ??
+          (response.statusCode == null
+              ? 'Could not connect to Upstox. Check your internet connection and try again.'
+              : 'Unable to fetch $context from Upstox (${response.statusCode}).');
+      throw UpstoxIpoException(message, statusCode: response.statusCode);
     }
 
     final body = response.body;
     if (body is! Map) {
       throw UpstoxIpoException(
         'Upstox returned an invalid response for $context.',
+        statusCode: response.statusCode,
       );
     }
 
@@ -134,7 +158,7 @@ class UpstoxIpoRepository implements IpoRepository {
     return normalized;
   }
 
-  Ipo _mapIpo(Map<String, dynamic> data) {
+  Ipo _mapIpo(Map<String, dynamic> data, {required bool isDetailed}) {
     final timelineRaw = data['timeline'];
     final timeline = timelineRaw is Map
         ? Map<String, dynamic>.from(timelineRaw)
@@ -145,21 +169,15 @@ class UpstoxIpoRepository implements IpoRepository {
         ? Map<String, dynamic>.from(registrarRaw)
         : const <String, dynamic>{};
 
-    final type = _parseType(data['issue_type']);
-    final minimumPrice = _positiveDouble(data['minimum_price']);
-    final maximumPrice = _positiveDouble(data['maximum_price']);
-
     return Ipo(
       id: _asString(data['id']) ?? '',
       name: _asString(data['name']) ?? 'Unknown IPO',
       symbol: _asString(data['symbol']) ?? '',
-      type: type,
+      type: _parseType(data['issue_type']),
       status: _parseStatus(data['status']),
-      // Upstox classifies the market segment as regular/sme; it does not
-      // expose book-built vs fixed-price in these endpoints.
       issueType: 'IPO',
-      minPrice: minimumPrice,
-      maxPrice: maximumPrice,
+      minPrice: _positiveDouble(data['minimum_price']),
+      maxPrice: _positiveDouble(data['maximum_price']),
       lotSize: _asInt(data['lot_size']),
       openDate: _parseDate(
         timeline['application_start_date'] ?? data['bidding_start_date'],
@@ -177,14 +195,14 @@ class UpstoxIpoRepository implements IpoRepository {
       listingPrice: _positiveDouble(data['listing_price']),
       listingExchange: _asString(data['listing_exchange']),
       cutOffPrice: _positiveDouble(data['cut_off_price']),
+      isDetailed: isDetailed,
     );
   }
 
   void _ensureConfigured() {
     if (_token.isEmpty) {
       throw const UpstoxIpoException(
-        'Upstox Analytics Token is not configured. Run the app with '
-        '--dart-define=UPSTOX_ANALYTICS_TOKEN=YOUR_TOKEN.',
+        'Upstox Analytics Token is not configured.',
       );
     }
   }

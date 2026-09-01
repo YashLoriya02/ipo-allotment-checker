@@ -2,8 +2,18 @@ import '../../data/models/ipo.dart';
 
 abstract class Formatters {
   static const _months = <String>[
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
   ];
 
   static String shortDate(DateTime? date) {
@@ -42,12 +52,57 @@ abstract class Formatters {
   }
 
   static String initials(String name) {
-    final words = name.trim().split(RegExp(r'\s+')).where((e) => e.isNotEmpty).toList();
+    final words = name
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((e) => e.isNotEmpty)
+        .toList();
     if (words.isEmpty) return 'IPO';
     if (words.length == 1) {
       final word = words.first;
       return (word.length <= 2 ? word : word.substring(0, 2)).toUpperCase();
     }
     return '${words.first[0]}${words[1][0]}'.toUpperCase();
+  }
+
+  static DateTime dateOnly(DateTime date) =>
+      DateTime(date.year, date.month, date.day);
+
+  static bool isToday(DateTime? date) {
+    if (date == null) return false;
+    final now = dateOnly(DateTime.now());
+    return dateOnly(date) == now;
+  }
+
+  static String relativeDay(DateTime? date, {bool capitalize = true}) {
+    if (date == null) return 'Date pending';
+    final today = dateOnly(DateTime.now());
+    final target = dateOnly(date);
+    final days = target.difference(today).inDays;
+
+    final text = switch (days) {
+      0 => 'today',
+      1 => 'tomorrow',
+      -1 => 'yesterday',
+      > 1 => 'in $days days',
+      _ => '${days.abs()} days ago',
+    };
+
+    if (!capitalize || text.isEmpty) return text;
+    return '${text[0].toUpperCase()}${text.substring(1)}';
+  }
+
+  static String eventRelative(String event, DateTime? date) {
+    if (date == null) return '$event date pending';
+    return '$event ${relativeDay(date, capitalize: false)}';
+  }
+
+  static String lastUpdated(DateTime? date) {
+    if (date == null) return 'Not refreshed yet';
+    final diff = DateTime.now().difference(date);
+    if (diff.inSeconds < 45) return 'Updated just now';
+    if (diff.inMinutes < 60) return 'Updated ${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return 'Updated ${diff.inHours}h ago';
+    return 'Updated ${shortDate(date)}';
   }
 }
