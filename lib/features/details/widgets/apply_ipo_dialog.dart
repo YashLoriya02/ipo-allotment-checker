@@ -50,6 +50,15 @@ class _ApplyIpoDialogState extends State<ApplyIpoDialog> {
 
     if (added) {
       Get.back();
+
+      Future<void>.delayed(const Duration(milliseconds: 120), () {
+        Get.snackbar(
+          'Added to Applied',
+          '${widget.ipo.symbol} will be tracked for ${profile.name}.',
+          snackPosition: SnackPosition.BOTTOM,
+          icon: const Icon(Icons.check_circle_rounded),
+        );
+      });
       return;
     }
 
@@ -93,7 +102,9 @@ class _ApplyIpoDialogState extends State<ApplyIpoDialog> {
                         width: 44,
                         height: 44,
                         decoration: BoxDecoration(
-                          color: theme.colorScheme.primary.withValues(alpha: 0.10),
+                          color: theme.colorScheme.primary.withValues(
+                            alpha: 0.10,
+                          ),
                           borderRadius: BorderRadius.circular(14),
                         ),
                         child: Icon(
@@ -161,10 +172,11 @@ class _ApplyIpoDialogState extends State<ApplyIpoDialog> {
                           _NoPanProfile(onAdd: _profiles.openAddProfileSheet)
                         else ...[
                           ...profiles.map((profile) {
-                            final alreadyAdded = _applications.isAppliedWithProfile(
-                              widget.ipo.id,
-                              profile.id,
-                            );
+                            final alreadyAdded = _applications
+                                .isAppliedWithProfile(
+                                  widget.ipo.id,
+                                  profile.id,
+                                );
                             final isSelected = selected?.id == profile.id;
 
                             return Padding(
@@ -173,20 +185,26 @@ class _ApplyIpoDialogState extends State<ApplyIpoDialog> {
                                 onTap: alreadyAdded
                                     ? null
                                     : () => setState(
-                                          () => _selectedProfileId = profile.id,
-                                        ),
+                                        () => _selectedProfileId = profile.id,
+                                      ),
                                 borderRadius: BorderRadius.circular(17),
                                 child: AnimatedContainer(
                                   duration: const Duration(milliseconds: 160),
                                   padding: const EdgeInsets.all(13),
                                   decoration: BoxDecoration(
                                     color: isSelected
-                                        ? theme.colorScheme.primary.withValues(alpha: 0.08)
-                                        : theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.42),
+                                        ? theme.colorScheme.primary.withValues(
+                                            alpha: 0.08,
+                                          )
+                                        : theme
+                                              .colorScheme
+                                              .surfaceContainerHighest
+                                              .withValues(alpha: 0.42),
                                     borderRadius: BorderRadius.circular(17),
                                     border: Border.all(
                                       color: isSelected
-                                          ? theme.colorScheme.primary.withValues(alpha: 0.42)
+                                          ? theme.colorScheme.primary
+                                                .withValues(alpha: 0.42)
                                           : Colors.transparent,
                                     ),
                                   ),
@@ -194,7 +212,10 @@ class _ApplyIpoDialogState extends State<ApplyIpoDialog> {
                                     children: [
                                       CircleAvatar(
                                         radius: 20,
-                                        backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.10),
+                                        backgroundColor: theme
+                                            .colorScheme
+                                            .primary
+                                            .withValues(alpha: 0.10),
                                         child: Icon(
                                           Icons.person_rounded,
                                           color: theme.colorScheme.primary,
@@ -204,14 +225,18 @@ class _ApplyIpoDialogState extends State<ApplyIpoDialog> {
                                       const SizedBox(width: 11),
                                       Expanded(
                                         child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
                                           children: [
                                             Row(
                                               children: [
                                                 Flexible(
                                                   child: Text(
                                                     profile.name,
-                                                    style: const TextStyle(fontWeight: FontWeight.w800),
+                                                    style: const TextStyle(
+                                                      fontWeight:
+                                                          FontWeight.w800,
+                                                    ),
                                                   ),
                                                 ),
                                                 if (profile.isDefault) ...[
@@ -221,7 +246,8 @@ class _ApplyIpoDialogState extends State<ApplyIpoDialog> {
                                                     style: TextStyle(
                                                       fontSize: 8,
                                                       color: AppColors.mint,
-                                                      fontWeight: FontWeight.w900,
+                                                      fontWeight:
+                                                          FontWeight.w900,
                                                     ),
                                                   ),
                                                 ],
@@ -232,15 +258,21 @@ class _ApplyIpoDialogState extends State<ApplyIpoDialog> {
                                               alreadyAdded
                                                   ? '${profile.maskedPan} · Already added'
                                                   : profile.maskedPan,
-                                              style: theme.textTheme.bodySmall?.copyWith(
-                                                color: theme.colorScheme.onSurfaceVariant,
-                                              ),
+                                              style: theme.textTheme.bodySmall
+                                                  ?.copyWith(
+                                                    color: theme
+                                                        .colorScheme
+                                                        .onSurfaceVariant,
+                                                  ),
                                             ),
                                           ],
                                         ),
                                       ),
                                       if (alreadyAdded)
-                                        const Icon(Icons.check_circle_rounded, color: AppColors.mint)
+                                        const Icon(
+                                          Icons.check_circle_rounded,
+                                          color: AppColors.mint,
+                                        )
                                       else
                                         Radio<String>(
                                           value: profile.id,
@@ -271,15 +303,17 @@ class _ApplyIpoDialogState extends State<ApplyIpoDialog> {
                               ? const SizedBox(
                                   width: 18,
                                   height: 18,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
                                 )
                               : const Icon(Icons.check_rounded),
                           label: Text(
                             available.isEmpty && profiles.isNotEmpty
                                 ? 'All PAN profiles already added'
                                 : _saving
-                                    ? 'Adding…'
-                                    : 'Add to My Applications',
+                                ? 'Adding…'
+                                : 'Add to My Applications',
                           ),
                         ),
                       ],
@@ -305,7 +339,9 @@ class _IpoSummary extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.42),
+        color: Theme.of(
+          context,
+        ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.42),
         borderRadius: BorderRadius.circular(17),
       ),
       child: Row(
@@ -349,7 +385,9 @@ class _SummaryValue extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(
-      crossAxisAlignment: end ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      crossAxisAlignment: end
+          ? CrossAxisAlignment.end
+          : CrossAxisAlignment.start,
       children: [
         Text(label, style: Theme.of(context).textTheme.labelSmall),
         const SizedBox(height: 3),
@@ -383,7 +421,10 @@ class _NoPanProfile extends StatelessWidget {
         children: [
           const Icon(Icons.badge_outlined, size: 30),
           const SizedBox(height: 8),
-          const Text('Add a PAN profile first', style: TextStyle(fontWeight: FontWeight.w800)),
+          const Text(
+            'Add a PAN profile first',
+            style: TextStyle(fontWeight: FontWeight.w800),
+          ),
           const SizedBox(height: 5),
           Text(
             'Save the PAN once, then reuse the profile for future IPO applications.',

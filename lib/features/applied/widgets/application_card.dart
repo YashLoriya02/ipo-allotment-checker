@@ -15,17 +15,20 @@ class ApplicationCard extends StatelessWidget {
     required this.ipo,
     required this.profile,
     required this.onRemove,
+    this.onCheck,
   });
 
   final IpoApplication application;
   final Ipo ipo;
   final PanProfile? profile;
   final VoidCallback onRemove;
+  final VoidCallback? onCheck;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final state = _stateVisual(application.status, ipo);
+    final isChecking = application.status == ApplicationStatus.checking;
 
     return InkWell(
       onTap: () => Get.toNamed(AppRoutes.details, arguments: ipo),
@@ -77,7 +80,9 @@ class ApplicationCard extends StatelessWidget {
                         children: [
                           _MiniTag(label: ipo.typeLabel),
                           if (profile != null)
-                            _MiniTag(label: '${profile!.name} · ${profile!.maskedPan}'),
+                            _MiniTag(
+                              label: '${profile!.name} · ${profile!.maskedPan}',
+                            ),
                           if (profile == null)
                             const _MiniTag(label: 'PAN profile removed'),
                         ],
@@ -115,8 +120,18 @@ class ApplicationCard extends StatelessWidget {
               ),
               child: Row(
                 children: [
-                  Icon(state.icon, color: state.color, size: 18),
-                  const SizedBox(width: 8),
+                  if (isChecking)
+                    SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.2,
+                        color: state.color,
+                      ),
+                    )
+                  else
+                    Icon(state.icon, color: state.color, size: 18),
+                  const SizedBox(width: 16),
                   Expanded(
                     child: Text(
                       state.label,
@@ -138,6 +153,38 @@ class ApplicationCard extends StatelessWidget {
                 ],
               ),
             ),
+            if (application.lastMessage != null &&
+                application.lastMessage!.trim().isNotEmpty &&
+                application.status != ApplicationStatus.allotted &&
+                application.status != ApplicationStatus.notAllotted) ...[
+              const SizedBox(height: 8),
+              Text(
+                application.lastMessage!,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  height: 1.35,
+                ),
+              ),
+            ],
+            if (application.lastCheckedAt != null) ...[
+              const SizedBox(height: 7),
+              Row(
+                children: [
+                  Icon(
+                    Icons.history_rounded,
+                    size: 13,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    _lastCheckedText(context, application.lastCheckedAt!),
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ],
             const SizedBox(height: 16),
             Row(
               children: [
@@ -168,10 +215,51 @@ class ApplicationCard extends StatelessWidget {
                 ),
               ],
             ),
+            if (!application.isCompleted) ...[
+              const SizedBox(height: 17),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: isChecking ? null : onCheck,
+                  icon: isChecking
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : Icon(
+                          onCheck == null
+                              ? Icons.lock_clock_rounded
+                              : Icons.fact_check_outlined,
+                          size: 18,
+                        ),
+                  label: Text(
+                    isChecking
+                        ? 'Checking KFin...'
+                        : onCheck == null
+                        ? 'Registrar checker coming soon'
+                        : 'Check allotment',
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),
     );
+  }
+
+  String _lastCheckedText(BuildContext context, DateTime value) {
+    final now = DateTime.now();
+    final date = Formatters.dateOnly(value);
+    final today = Formatters.dateOnly(now);
+    final time = TimeOfDay.fromDateTime(value).format(context);
+
+    if (date == today) return 'Last checked today at $time';
+    return 'Last checked ${Formatters.shortDate(value)} at $time';
   }
 
   ({String label, IconData icon, Color color}) _stateVisual(
@@ -201,7 +289,8 @@ class ApplicationCard extends StatelessWidget {
         }
         if (days > 1) {
           return (
-            label: 'Allotment ${Formatters.relativeDay(allotment, capitalize: false)}',
+            label:
+                'Allotment ${Formatters.relativeDay(allotment, capitalize: false)}',
             icon: Icons.schedule_rounded,
             color: AppColors.amber,
           );
@@ -216,40 +305,55 @@ class ApplicationCard extends StatelessWidget {
 
     return switch (status) {
       ApplicationStatus.waiting => (
-          label: 'Waiting for allotment date',
-          icon: Icons.schedule_rounded,
-          color: AppColors.amber,
-        ),
+        label: 'Waiting for allotment date',
+        icon: Icons.schedule_rounded,
+        color: AppColors.amber,
+      ),
       ApplicationStatus.checking => (
-          label: 'Checking allotment',
-          icon: Icons.sync_rounded,
-          color: AppColors.brand,
-        ),
+        label: 'Checking allotment',
+        icon: Icons.sync_rounded,
+        color: AppColors.brand,
+      ),
       ApplicationStatus.allotted => (
-          label: 'Allotted',
-          icon: Icons.celebration_rounded,
-          color: AppColors.mint,
-        ),
+        label: 'Allotted',
+        icon: Icons.celebration_rounded,
+        color: AppColors.mint,
+      ),
       ApplicationStatus.notAllotted => (
-          label: 'Not allotted',
-          icon: Icons.remove_circle_outline_rounded,
-          color: Colors.blueGrey,
-        ),
+        label: 'Not allotted',
+        icon: Icons.remove_circle_outline_rounded,
+        color: Colors.blueGrey,
+      ),
+      ApplicationStatus.noRecord => (
+        label: 'No allotment record found',
+        icon: Icons.search_off_rounded,
+        color: AppColors.rose,
+      ),
       ApplicationStatus.resultNotLive => (
-          label: 'Result not live yet',
-          icon: Icons.hourglass_bottom_rounded,
-          color: AppColors.amber,
-        ),
+        label: 'Result not live yet',
+        icon: Icons.hourglass_bottom_rounded,
+        color: AppColors.amber,
+      ),
       ApplicationStatus.humanRequired => (
-          label: 'Manual verification required',
-          icon: Icons.touch_app_rounded,
-          color: AppColors.rose,
-        ),
-      ApplicationStatus.error => (
-          label: 'Temporary issue',
-          icon: Icons.error_outline_rounded,
-          color: AppColors.rose,
-        ),
+        label: 'Manual verification required',
+        icon: Icons.touch_app_rounded,
+        color: AppColors.rose,
+      ),
+      ApplicationStatus.temporaryError => (
+        label: 'Temporary issue — try again',
+        icon: Icons.error_outline_rounded,
+        color: AppColors.rose,
+      ),
+      ApplicationStatus.unsupportedRegistrar => (
+        label: 'Registrar checker not supported yet',
+        icon: Icons.extension_off_outlined,
+        color: Colors.blueGrey,
+      ),
+      ApplicationStatus.unknown => (
+        label: 'Result needs another check',
+        icon: Icons.help_outline_rounded,
+        color: AppColors.amber,
+      ),
     };
   }
 }
@@ -268,9 +372,9 @@ class _MiniTag extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              fontWeight: FontWeight.w800,
-            ),
+        style: Theme.of(
+          context,
+        ).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w800),
       ),
     );
   }
@@ -292,22 +396,24 @@ class _Meta extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(
-      crossAxisAlignment: end ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      crossAxisAlignment: end
+          ? CrossAxisAlignment.end
+          : CrossAxisAlignment.start,
       children: [
         Text(
           label,
           style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
         ),
         const SizedBox(height: 4),
         Text(
           value,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                fontWeight: FontWeight.w800,
-              ),
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w800),
         ),
         if (helper != null) ...[
           const SizedBox(height: 2),
@@ -316,9 +422,9 @@ class _Meta extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  fontSize: 9,
-                ),
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontSize: 9,
+            ),
           ),
         ],
       ],

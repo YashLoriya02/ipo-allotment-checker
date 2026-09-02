@@ -2,6 +2,7 @@ import 'package:get/get.dart';
 
 import '../../data/repositories/ipo_repository.dart';
 import '../../data/repositories/upstox_ipo_repository.dart';
+import '../../data/services/allotment_api_service.dart';
 import '../../data/services/local_storage_service.dart';
 import '../../data/services/secure_storage_service.dart';
 import '../../features/applied/controllers/applied_controller.dart';
@@ -15,6 +16,7 @@ class InitialBinding extends Bindings {
   void dependencies() {
     Get.put(LocalStorageService(), permanent: true);
     Get.put(SecureStorageService(), permanent: true);
+    Get.put(AllotmentApiService(), permanent: true);
     Get.put<IpoRepository>(UpstoxIpoRepository(), permanent: true);
 
     Get.put(ThemeController(), permanent: true);
