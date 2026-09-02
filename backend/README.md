@@ -14,7 +14,7 @@ playwright install chromium
 ## Run
 
 ```powershell
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+py -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
 Swagger: `http://127.0.0.1:8000/docs`
