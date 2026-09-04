@@ -15,7 +15,7 @@ class KfinAllotmentService extends GetxService {
         .trim()
         .toUpperCase();
 
-    return registrar.startsWith("KFIN") || registrar.startsWith("K FIN");
+    return registrar.contains('KFIN') || registrar.contains('K FINTECH');
   }
 
   String? clientIdFor(Ipo ipo) => KfinClientIdRegistry.resolve(ipo);
@@ -23,6 +23,7 @@ class KfinAllotmentService extends GetxService {
   Future<AllotmentCheckResult> checkAllotment({
     required Ipo ipo,
     required String pan,
+    bool skipAllotmentDateGuard = false,
   }) async {
     if (!supportsRegistrar(ipo)) {
       return _result(
@@ -32,7 +33,7 @@ class KfinAllotmentService extends GetxService {
       );
     }
 
-    if (_isBeforeAllotmentDate(ipo.allotmentDate)) {
+    if (!skipAllotmentDateGuard && _isBeforeAllotmentDate(ipo.allotmentDate)) {
       return _result(
         ipo: ipo,
         status: AllotmentApiStatus.notLive,

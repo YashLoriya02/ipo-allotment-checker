@@ -31,6 +31,15 @@ class AppliedView extends GetView<AppliedController> {
                         color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                 ),
+                const SizedBox(height: 14),
+                Obx(
+                  () => _AutomaticAlertsCard(
+                    accessGranted: controller.notificationAccessGranted.value,
+                    listenerRunning: controller.notificationListenerRunning.value,
+                    onEnable: controller.enableAutomaticAllotmentAlerts,
+                    onRefresh: controller.refreshNotificationAccess,
+                  ),
+                ),
                 const SizedBox(height: 20),
                 Obx(
                   () => Row(
@@ -97,6 +106,99 @@ class AppliedView extends GetView<AppliedController> {
           );
         }),
       ],
+    );
+  }
+}
+
+class _AutomaticAlertsCard extends StatelessWidget {
+  const _AutomaticAlertsCard({
+    required this.accessGranted,
+    required this.listenerRunning,
+    required this.onEnable,
+    required this.onRefresh,
+  });
+
+  final bool accessGranted;
+  final bool listenerRunning;
+  final Future<void> Function() onEnable;
+  final Future<void> Function() onRefresh;
+
+  @override
+  Widget build(BuildContext context) {
+    final active = accessGranted && listenerRunning;
+    final primary = Theme.of(context).colorScheme.primary;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: active
+            ? primary.withValues(alpha: 0.08)
+            : Theme.of(context).colorScheme.surfaceContainerHighest
+                .withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: active
+              ? primary.withValues(alpha: 0.24)
+              : Theme.of(context).dividerColor,
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: active
+                  ? primary.withValues(alpha: 0.12)
+                  : Theme.of(context).colorScheme.surface,
+              borderRadius: BorderRadius.circular(13),
+            ),
+            child: Icon(
+              active
+                  ? Icons.notifications_active_rounded
+                  : Icons.notifications_none_rounded,
+              color: active ? primary : null,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  active ? 'Automatic allotment alerts on' : 'Enable automatic alerts',
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  active
+                      ? 'IPO Premium allotment alerts can trigger an automatic status check.'
+                      : 'Allow notification access so IPO Premium allotment alerts can trigger checks.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        height: 1.35,
+                      ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          if (!accessGranted)
+            FilledButton.tonal(
+              onPressed: () => onEnable(),
+              child: const Text('Enable'),
+            )
+          else if (!listenerRunning)
+            IconButton(
+              tooltip: 'Reconnect listener',
+              onPressed: () => onRefresh(),
+              icon: const Icon(Icons.refresh_rounded),
+            )
+          else
+            Icon(Icons.check_circle_rounded, color: primary),
+        ],
+      ),
     );
   }
 }

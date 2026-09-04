@@ -10,8 +10,7 @@ class LocalStorageService extends GetxService {
   final GetStorage _box = GetStorage('ipo_tracker');
 
   List<IpoApplication> readApplications() {
-    final raw =
-        _box.read<List<dynamic>>(StorageKeys.applications) ?? <dynamic>[];
+    final raw = _box.read<List<dynamic>>(StorageKeys.applications) ?? <dynamic>[];
     return raw
         .whereType<Map<dynamic, dynamic>>()
         .map((item) => IpoApplication.fromJson(Map<String, dynamic>.from(item)))
@@ -26,8 +25,7 @@ class LocalStorageService extends GetxService {
   }
 
   List<PanProfile> readProfiles() {
-    final raw =
-        _box.read<List<dynamic>>(StorageKeys.panProfiles) ?? <dynamic>[];
+    final raw = _box.read<List<dynamic>>(StorageKeys.panProfiles) ?? <dynamic>[];
     return raw
         .whereType<Map<dynamic, dynamic>>()
         .map((item) => PanProfile.fromJson(Map<String, dynamic>.from(item)))
@@ -76,6 +74,43 @@ class LocalStorageService extends GetxService {
     await writeCachedIpos(items);
   }
 
+
+  Future<bool> claimNotificationTrigger(
+    String eventKey, {
+    Duration duplicateWindow = const Duration(hours: 6),
+  }) async {
+    final now = DateTime.now();
+    final raw = _box.read<Map<dynamic, dynamic>>(
+          StorageKeys.processedNotificationTriggers,
+        ) ??
+        <dynamic, dynamic>{};
+
+    final entries = <String, DateTime>{};
+    for (final entry in raw.entries) {
+      final parsed = DateTime.tryParse(entry.value?.toString() ?? '');
+      if (parsed != null && now.difference(parsed) < const Duration(days: 2)) {
+        entries[entry.key.toString()] = parsed;
+      }
+    }
+
+    final previous = entries[eventKey];
+    if (previous != null && now.difference(previous).abs() < duplicateWindow) {
+      return false;
+    }
+
+    entries[eventKey] = now;
+
+    final sorted = entries.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    final limited = <String, String>{
+      for (final entry in sorted.take(60))
+        entry.key: entry.value.toIso8601String(),
+    };
+
+    await _box.write(StorageKeys.processedNotificationTriggers, limited);
+    return true;
+  }
+
   DateTime? readLastIpoRefresh() {
     final raw = _box.read<String>(StorageKeys.lastIpoRefresh);
     return raw == null ? null : DateTime.tryParse(raw);
@@ -91,8 +126,7 @@ class LocalStorageService extends GetxService {
     return _box.write(StorageKeys.themeMode, value);
   }
 
-  String? readDiscoverIpoType() =>
-      _box.read<String>(StorageKeys.discoverIpoType);
+  String? readDiscoverIpoType() => _box.read<String>(StorageKeys.discoverIpoType);
 
   Future<void> writeDiscoverIpoType(String? value) {
     if (value == null) {

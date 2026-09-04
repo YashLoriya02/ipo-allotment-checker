@@ -12,39 +12,52 @@ class LocalNotificationService {
       FlutterLocalNotificationsPlugin();
 
   bool _initialized = false;
+  bool _permissionRequested = false;
 
-  Future<void> initialize() async {
-    if (_initialized) return;
+  Future<void> initialize({bool requestPermission = true}) async {
+    if (!_initialized) {
+      const androidSettings = AndroidInitializationSettings(
+        '@mipmap/ic_launcher',
+      );
+      final darwinSettings = const DarwinInitializationSettings();
 
-    const androidSettings = AndroidInitializationSettings(
-      '@mipmap/ic_launcher',
-    );
-    final darwinSettings = const DarwinInitializationSettings();
+      final settings = InitializationSettings(
+        android: androidSettings,
+        iOS: darwinSettings,
+      );
 
-    final settings = InitializationSettings(
-      android: androidSettings,
-      iOS: darwinSettings,
-    );
+      await _plugin.initialize(settings);
+      _initialized = true;
+    }
 
-    await _plugin.initialize(settings);
-
-    await _plugin
-        .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin
-        >()
-        ?.requestNotificationsPermission();
-
-    _initialized = true;
+    if (requestPermission && !_permissionRequested) {
+      await _plugin
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >()
+          ?.requestNotificationsPermission();
+      _permissionRequested = true;
+    }
   }
 
-  Future<void> showManualCheckResult({
+  Future<void> showAllotmentResult({
     required Ipo ipo,
     required IpoApplication application,
+    String? profileName,
+    bool automatic = false,
+    bool requestPermission = true,
   }) async {
-    await initialize();
+    await initialize(requestPermission: requestPermission);
 
     final label = ipo.symbol.trim().isEmpty ? ipo.name : ipo.symbol;
-    final (title, body) = _content(label, application);
+
+    final (baseTitle, body) = _content(
+      label,
+      application,
+      profileName: profileName,
+    );
+
+    final title = baseTitle;
 
     const androidDetails = AndroidNotificationDetails(
       'ipo_allotment_results',
@@ -69,45 +82,111 @@ class LocalNotificationService {
     );
   }
 
-  (String, String) _content(String label, IpoApplication application) {
+  /// Backward-compatible name used by any older call sites.
+  Future<void> showManualCheckResult({
+    required Ipo ipo,
+    required IpoApplication application,
+  }) {
+    return showAllotmentResult(ipo: ipo, application: application);
+  }
+
+  /// Debug-only helper used by the Profile developer tool. This posts a real
+  /// Android notification from this application, allowing the notification
+  /// listener to be tested end-to-end on an emulator.
+  Future<void> showDebugTriggerNotification({
+    required String title,
+    required String message,
+  }) async {
+    assert(() {
+      return true;
+    }());
+
+    await initialize();
+
+    const androidDetails = AndroidNotificationDetails(
+      'ipo_trigger_debug',
+      'IPO Trigger Debug',
+      channelDescription:
+          'Debug notifications used to test IPO trigger detection.',
+      importance: Importance.high,
+      priority: Priority.high,
+      enableVibration: true,
+    );
+
+    const details = NotificationDetails(
+      android: androidDetails,
+      iOS: DarwinNotificationDetails(),
+    );
+
+    await _plugin.show(
+      DateTime.now().millisecondsSinceEpoch.remainder(0x7fffffff),
+      title.trim(),
+      message.trim(),
+      details,
+    );
+  }
+
+  (String, String) _content(
+    String label,
+    IpoApplication application, {
+    String? profileName,
+  }) {
+    final person = profileName?.trim();
+
+    final applicationLabel = person != null && person.isNotEmpty
+        ? '$label · $person'
+        : label;
+
     return switch (application.status) {
       ApplicationStatus.allotted => (
         'Allotted 🎉',
         application.allottedShares == null
-            ? '$label allotment found.'
-            : '$label: ${application.allottedShares} shares allotted.',
+            ? '$applicationLabel allotment found.'
+            : '$applicationLabel\n'
+                  '${application.allottedShares} shares allotted.',
       ),
+
       ApplicationStatus.notAllotted => (
         'Not allotted',
-        '$label: no shares were allotted.',
+        '$applicationLabel\nNo shares were allotted.',
       ),
+
       ApplicationStatus.noRecord => (
         'No allotment record',
-        '$label: no record found for this PAN.',
+        '$applicationLabel\nNo record found for this application.',
       ),
+
       ApplicationStatus.resultNotLive => (
         'Result not live yet',
-        '$label allotment result is not available yet.',
+        '$applicationLabel\nAllotment result is not available yet.',
       ),
+
       ApplicationStatus.unsupportedRegistrar => (
         'Registrar not supported',
-        application.lastMessage ?? '$label cannot be checked yet.',
+        '$applicationLabel\n'
+            '${application.lastMessage ?? 'Cannot be checked yet.'}',
       ),
+
       ApplicationStatus.unknown => (
         'Allotment check incomplete',
-        application.lastMessage ?? '$label result could not be interpreted.',
+        '$applicationLabel\n'
+            '${application.lastMessage ?? 'Result could not be interpreted.'}',
       ),
+
       ApplicationStatus.temporaryError => (
         'Allotment check failed',
-        application.lastMessage ?? '$label could not be checked right now.',
+        '$applicationLabel\n'
+            '${application.lastMessage ?? 'Could not be checked right now.'}',
       ),
+
       ApplicationStatus.humanRequired => (
         'Verification required',
-        '$label requires manual verification.',
+        '$applicationLabel\nManual verification is required.',
       ),
+
       ApplicationStatus.waiting || ApplicationStatus.checking => (
         'IPO allotment',
-        '$label allotment check is still pending.',
+        '$applicationLabel\nAllotment check is still pending.',
       ),
     };
   }

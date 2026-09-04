@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
@@ -5,6 +6,7 @@ import '../../../app/theme/app_colors.dart';
 import '../../../data/models/pan_profile.dart';
 import '../controllers/profile_controller.dart';
 import '../controllers/theme_controller.dart';
+import 'debug_notification_test_view.dart';
 
 class ProfileView extends GetView<ProfileController> {
   const ProfileView({super.key});
@@ -134,6 +136,42 @@ class ProfileView extends GetView<ProfileController> {
                   ),
                 ),
               ),
+              if (kDebugMode) ...[
+                const SizedBox(height: 14),
+                _SectionCard(
+                  title: 'Developer tools',
+                  subtitle: 'Visible in debug builds only',
+                  child: ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .primary
+                            .withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Icon(
+                        Icons.notifications_active_outlined,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
+                    title: const Text(
+                      'Notification trigger tester',
+                      style: TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    subtitle: const Text(
+                      'Send an IPO Premium-style notification from this app.',
+                    ),
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                    onTap: () => Get.to<void>(
+                      () => const DebugNotificationTestView(),
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: 14),
               const _SecurityNote(),
             ]),

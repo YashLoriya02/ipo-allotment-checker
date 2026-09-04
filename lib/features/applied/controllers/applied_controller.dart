@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
@@ -8,23 +10,28 @@ import '../../../data/models/pan_profile.dart';
 import '../../../data/repositories/ipo_repository.dart';
 import '../../../data/services/kfin_allotment_service.dart';
 import '../../../data/services/local_notification_service.dart';
+import '../../../data/services/ipo_premium_notification_listener_service.dart';
 import '../../../data/services/local_storage_service.dart';
 import '../../../data/services/secure_storage_service.dart';
 import '../../profile/controllers/profile_controller.dart';
 
-class AppliedController extends GetxController {
+class AppliedController extends GetxController with WidgetsBindingObserver {
   AppliedController()
-      : _storage = Get.find<LocalStorageService>(),
-        _secureStorage = Get.find<SecureStorageService>(),
-        _kfin = Get.find<KfinAllotmentService>(),
-        _repository = Get.find<IpoRepository>(),
-        _profileController = Get.find<ProfileController>();
+    : _storage = Get.find<LocalStorageService>(),
+      _secureStorage = Get.find<SecureStorageService>(),
+      _kfin = Get.find<KfinAllotmentService>(),
+      _repository = Get.find<IpoRepository>(),
+      _profileController = Get.find<ProfileController>();
 
   final LocalStorageService _storage;
   final SecureStorageService _secureStorage;
   final KfinAllotmentService _kfin;
   final IpoRepository _repository;
   final ProfileController _profileController;
+  final IpoPremiumNotificationListenerService _notificationListener =
+      IpoPremiumNotificationListenerService.instance;
+
+  StreamSubscription<IpoApplication>? _automationUpdateSubscription;
 
   final applications = <IpoApplication>[].obs;
   final selectedCompleted = false.obs;
@@ -32,11 +39,60 @@ class AppliedController extends GetxController {
   @override
   void onInit() {
     super.onInit();
+    WidgetsBinding.instance.addObserver(this);
+    reloadApplicationsFromStorage();
+    _automationUpdateSubscription = _notificationListener.applicationUpdates
+        .listen((updated) {
+          final index = applications.indexWhere(
+            (item) => item.id == updated.id,
+          );
+          if (index == -1) return;
+
+          _replaceApplication(index, updated);
+
+          // Keep this isolate's GetStorage cache in sync with the background
+          // listener isolate so a later manual action cannot overwrite the result.
+          unawaited(_persist());
+        });
+    unawaited(_notificationListener.refreshAndStartIfAllowed());
+  }
+
+  @override
+  void onClose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _automationUpdateSubscription?.cancel();
+    super.onClose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      reloadApplicationsFromStorage();
+      unawaited(_notificationListener.refreshAndStartIfAllowed());
+    }
+  }
+
+  RxBool get notificationAccessGranted =>
+      _notificationListener.hasNotificationAccess;
+
+  RxBool get notificationListenerRunning =>
+      _notificationListener.listenerRunning;
+
+  void reloadApplicationsFromStorage() {
     applications.assignAll(_storage.readApplications());
   }
 
+  Future<void> enableAutomaticAllotmentAlerts() async {
+    await _notificationListener.openNotificationAccessSettings();
+  }
+
+  Future<void> refreshNotificationAccess() {
+    return _notificationListener.refreshAndStartIfAllowed();
+  }
+
   int get activeCount => applications.where((item) => !item.isCompleted).length;
-  int get completedCount => applications.where((item) => item.isCompleted).length;
+  int get completedCount =>
+      applications.where((item) => item.isCompleted).length;
 
   List<IpoApplication> get visibleApplications {
     final completed = selectedCompleted.value;
@@ -64,10 +120,9 @@ class AppliedController extends GetxController {
   int appliedProfileCount(String ipoId) =>
       applications.where((item) => item.ipoId == ipoId).length;
 
-  bool isAppliedWithProfile(String ipoId, String profileId) =>
-      applications.any(
-        (item) => item.ipoId == ipoId && item.panProfileId == profileId,
-      );
+  bool isAppliedWithProfile(String ipoId, String profileId) => applications.any(
+    (item) => item.ipoId == ipoId && item.panProfileId == profileId,
+  );
 
   bool supportsRegistrar(Ipo ipo) => _kfin.supportsRegistrar(ipo);
 
@@ -97,10 +152,7 @@ class AppliedController extends GetxController {
     return true;
   }
 
-  Future<void> checkAllotment(
-    IpoApplication application,
-    Ipo ipo,
-  ) async {
+  Future<void> checkAllotment(IpoApplication application, Ipo ipo) async {
     final index = applications.indexWhere((item) => item.id == application.id);
     if (index == -1) return;
 
@@ -151,10 +203,7 @@ class AppliedController extends GetxController {
     );
 
     try {
-      final result = await _kfin.checkAllotment(
-        ipo: ipo,
-        pan: pan,
-      );
+      final result = await _kfin.checkAllotment(ipo: ipo, pan: pan);
 
       final latestIndex = applications.indexWhere(
         (item) => item.id == application.id,
@@ -228,12 +277,15 @@ class AppliedController extends GetxController {
 
   Future<void> _notify(Ipo ipo, IpoApplication application) async {
     try {
-      await LocalNotificationService.instance.showManualCheckResult(
+      final profile = profileFor(application);
+
+      await LocalNotificationService.instance.showAllotmentResult(
         ipo: ipo,
         application: application,
+        profileName: profile?.name,
       );
     } catch (_) {
-      // Notification failure must never break the allotment result flow.
+      // Notification failure must never break allotment flow.
     }
   }
 
@@ -280,7 +332,8 @@ class AppliedController extends GetxController {
       case ApplicationStatus.unsupportedRegistrar:
         Get.snackbar(
           'Registrar not supported',
-          application.lastMessage ?? 'This registrar checker is not available yet.',
+          application.lastMessage ??
+              'This registrar checker is not available yet.',
           snackPosition: SnackPosition.BOTTOM,
         );
         break;

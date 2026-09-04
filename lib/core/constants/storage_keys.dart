@@ -5,6 +5,8 @@ abstract class StorageKeys {
   static const discoverIpoType = 'discover_ipo_type';
   static const cachedIpos = 'cached_ipos';
   static const lastIpoRefresh = 'last_ipo_refresh';
+  static const processedNotificationTriggers =
+      'processed_notification_triggers';
 
   static String pan(String profileId) => 'pan_$profileId';
 }
