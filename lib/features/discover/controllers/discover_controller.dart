@@ -8,8 +8,8 @@ import '../../../data/services/local_storage_service.dart';
 
 class DiscoverController extends GetxController {
   DiscoverController()
-      : _repository = Get.find<IpoRepository>(),
-        _storage = Get.find<LocalStorageService>();
+    : _repository = Get.find<IpoRepository>(),
+      _storage = Get.find<LocalStorageService>();
 
   final IpoRepository _repository;
   final LocalStorageService _storage;
@@ -31,7 +31,11 @@ class DiscoverController extends GetxController {
   @override
   void onInit() {
     super.onInit();
+    reloadFromStorage();
+    load();
+  }
 
+  void reloadFromStorage() {
     final savedType = _storage.readDiscoverIpoType();
     selectedType.value = switch (savedType) {
       'mainboard' => IpoType.mainboard,
@@ -40,12 +44,8 @@ class DiscoverController extends GetxController {
     };
 
     final cached = _storage.readCachedIpos();
-    if (cached.isNotEmpty) {
-      allIpos.assignAll(cached);
-    }
+    allIpos.assignAll(cached);
     lastUpdated.value = _storage.readLastIpoRefresh();
-
-    load();
   }
 
   @override
@@ -102,8 +102,10 @@ class DiscoverController extends GetxController {
 
     final result = allIpos.where((ipo) {
       final matchesStatus = searching || ipo.status == selectedStatus.value;
-      final matchesType = selectedType.value == null || ipo.type == selectedType.value;
-      final matchesSearch = !searching ||
+      final matchesType =
+          selectedType.value == null || ipo.type == selectedType.value;
+      final matchesSearch =
+          !searching ||
           ipo.name.toLowerCase().contains(query) ||
           ipo.symbol.toLowerCase().contains(query) ||
           (ipo.registrarName?.toLowerCase().contains(query) ?? false) ||
@@ -113,11 +115,11 @@ class DiscoverController extends GetxController {
 
     result.sort((a, b) {
       DateTime? relevant(Ipo ipo) => switch (ipo.status) {
-            IpoStatus.open => ipo.closeDate,
-            IpoStatus.upcoming => ipo.openDate,
-            IpoStatus.closed => ipo.allotmentDate ?? ipo.closeDate,
-            IpoStatus.listed => ipo.listingDate ?? ipo.closeDate,
-          };
+        IpoStatus.open => ipo.closeDate,
+        IpoStatus.upcoming => ipo.openDate,
+        IpoStatus.closed => ipo.allotmentDate ?? ipo.closeDate,
+        IpoStatus.listed => ipo.listingDate ?? ipo.closeDate,
+      };
 
       final aDate = relevant(a);
       final bDate = relevant(b);
@@ -127,7 +129,8 @@ class DiscoverController extends GetxController {
 
       if (searching) return bDate.compareTo(aDate);
 
-      final historical = selectedStatus.value == IpoStatus.closed ||
+      final historical =
+          selectedStatus.value == IpoStatus.closed ||
           selectedStatus.value == IpoStatus.listed;
       return historical ? bDate.compareTo(aDate) : aDate.compareTo(bDate);
     });

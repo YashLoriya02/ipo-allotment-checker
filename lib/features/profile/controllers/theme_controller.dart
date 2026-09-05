@@ -12,12 +12,17 @@ class ThemeController extends GetxController {
   @override
   void onInit() {
     super.onInit();
+    reloadFromStorage();
+  }
+
+  void reloadFromStorage() {
     final stored = _storage.readThemeMode();
     themeMode.value = switch (stored) {
       'light' => ThemeMode.light,
       'dark' => ThemeMode.dark,
       _ => ThemeMode.system,
     };
+    Get.changeThemeMode(themeMode.value);
   }
 
   Future<void> setMode(ThemeMode mode) async {

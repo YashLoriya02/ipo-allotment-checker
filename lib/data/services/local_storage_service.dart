@@ -10,7 +10,8 @@ class LocalStorageService extends GetxService {
   final GetStorage _box = GetStorage('ipo_tracker');
 
   List<IpoApplication> readApplications() {
-    final raw = _box.read<List<dynamic>>(StorageKeys.applications) ?? <dynamic>[];
+    final raw =
+        _box.read<List<dynamic>>(StorageKeys.applications) ?? <dynamic>[];
     return raw
         .whereType<Map<dynamic, dynamic>>()
         .map((item) => IpoApplication.fromJson(Map<String, dynamic>.from(item)))
@@ -25,7 +26,8 @@ class LocalStorageService extends GetxService {
   }
 
   List<PanProfile> readProfiles() {
-    final raw = _box.read<List<dynamic>>(StorageKeys.panProfiles) ?? <dynamic>[];
+    final raw =
+        _box.read<List<dynamic>>(StorageKeys.panProfiles) ?? <dynamic>[];
     return raw
         .whereType<Map<dynamic, dynamic>>()
         .map((item) => PanProfile.fromJson(Map<String, dynamic>.from(item)))
@@ -74,13 +76,13 @@ class LocalStorageService extends GetxService {
     await writeCachedIpos(items);
   }
 
-
   Future<bool> claimNotificationTrigger(
     String eventKey, {
     Duration duplicateWindow = const Duration(hours: 6),
   }) async {
     final now = DateTime.now();
-    final raw = _box.read<Map<dynamic, dynamic>>(
+    final raw =
+        _box.read<Map<dynamic, dynamic>>(
           StorageKeys.processedNotificationTriggers,
         ) ??
         <dynamic, dynamic>{};
@@ -116,22 +118,48 @@ class LocalStorageService extends GetxService {
     return raw == null ? null : DateTime.tryParse(raw);
   }
 
-  Future<void> writeLastIpoRefresh(DateTime value) {
+  Future<void> writeLastIpoRefresh(DateTime? value) {
+    if (value == null) {
+      return _box.remove(StorageKeys.lastIpoRefresh);
+    }
     return _box.write(StorageKeys.lastIpoRefresh, value.toIso8601String());
   }
 
   String? readThemeMode() => _box.read<String>(StorageKeys.themeMode);
 
-  Future<void> writeThemeMode(String value) {
+  Future<void> writeThemeMode(String? value) {
+    if (value == null) {
+      return _box.remove(StorageKeys.themeMode);
+    }
     return _box.write(StorageKeys.themeMode, value);
   }
 
-  String? readDiscoverIpoType() => _box.read<String>(StorageKeys.discoverIpoType);
+  String? readDiscoverIpoType() =>
+      _box.read<String>(StorageKeys.discoverIpoType);
 
   Future<void> writeDiscoverIpoType(String? value) {
     if (value == null) {
       return _box.remove(StorageKeys.discoverIpoType);
     }
     return _box.write(StorageKeys.discoverIpoType, value);
+  }
+
+  Map<String, String> readProcessedNotificationTriggers() {
+    final raw =
+        _box.read<Map<dynamic, dynamic>>(
+          StorageKeys.processedNotificationTriggers,
+        ) ??
+        <dynamic, dynamic>{};
+    return {
+      for (final entry in raw.entries)
+        entry.key.toString(): entry.value.toString(),
+    };
+  }
+
+  Future<void> writeProcessedNotificationTriggers(Map<String, String> value) {
+    if (value.isEmpty) {
+      return _box.remove(StorageKeys.processedNotificationTriggers);
+    }
+    return _box.write(StorageKeys.processedNotificationTriggers, value);
   }
 }

@@ -9,8 +9,8 @@ import '../widgets/add_pan_sheet.dart';
 
 class ProfileController extends GetxController {
   ProfileController()
-      : _storage = Get.find<LocalStorageService>(),
-        _secureStorage = Get.find<SecureStorageService>();
+    : _storage = Get.find<LocalStorageService>(),
+      _secureStorage = Get.find<SecureStorageService>();
 
   final LocalStorageService _storage;
   final SecureStorageService _secureStorage;
@@ -20,12 +20,15 @@ class ProfileController extends GetxController {
   @override
   void onInit() {
     super.onInit();
-    profiles.assignAll(_storage.readProfiles());
+    reloadFromStorage();
   }
+
+  void reloadFromStorage() => profiles.assignAll(_storage.readProfiles());
 
   PanProfile? get defaultProfile {
     if (profiles.isEmpty) return null;
-    return profiles.firstWhereOrNull((profile) => profile.isDefault) ?? profiles.first;
+    return profiles.firstWhereOrNull((profile) => profile.isDefault) ??
+        profiles.first;
   }
 
   void openAddProfileSheet() {
@@ -39,7 +42,10 @@ class ProfileController extends GetxController {
     );
   }
 
-  Future<String?> addProfile({required String name, required String pan}) async {
+  Future<String?> addProfile({
+    required String name,
+    required String pan,
+  }) async {
     final normalizedName = name.trim();
     final normalizedPan = pan.toUpperCase().trim();
 
@@ -74,7 +80,8 @@ class ProfileController extends GetxController {
     if (normalized.length < 2) return 'Enter a profile name.';
 
     final duplicateName = profiles.any(
-      (item) => item.id != profile.id &&
+      (item) =>
+          item.id != profile.id &&
           item.name.toLowerCase() == normalized.toLowerCase(),
     );
     if (duplicateName) return 'Another PAN profile already uses this name.';
@@ -106,8 +113,7 @@ class ProfileController extends GetxController {
       .readApplications()
       .where(
         (application) =>
-            application.panProfileId == profileId &&
-            !application.isCompleted,
+            application.panProfileId == profileId && !application.isCompleted,
       )
       .length;
 
