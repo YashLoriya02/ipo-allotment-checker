@@ -8,7 +8,7 @@ import '../../../data/models/ipo.dart';
 import '../../../data/models/ipo_application.dart';
 import '../../../data/models/pan_profile.dart';
 import '../../../data/repositories/ipo_repository.dart';
-import '../../../data/services/kfin_allotment_service.dart';
+import '../../../data/services/allotment_registrar_service.dart';
 import '../../../data/services/local_notification_service.dart';
 import '../../../data/services/ipo_premium_notification_listener_service.dart';
 import '../../../data/services/local_storage_service.dart';
@@ -19,13 +19,13 @@ class AppliedController extends GetxController with WidgetsBindingObserver {
   AppliedController()
     : _storage = Get.find<LocalStorageService>(),
       _secureStorage = Get.find<SecureStorageService>(),
-      _kfin = Get.find<KfinAllotmentService>(),
+      _allotmentRegistrar = Get.find<AllotmentRegistrarService>(),
       _repository = Get.find<IpoRepository>(),
       _profileController = Get.find<ProfileController>();
 
   final LocalStorageService _storage;
   final SecureStorageService _secureStorage;
-  final KfinAllotmentService _kfin;
+  final AllotmentRegistrarService _allotmentRegistrar;
   final IpoRepository _repository;
   final ProfileController _profileController;
   final IpoPremiumNotificationListenerService _notificationListener =
@@ -124,7 +124,7 @@ class AppliedController extends GetxController with WidgetsBindingObserver {
     (item) => item.ipoId == ipoId && item.panProfileId == profileId,
   );
 
-  bool supportsRegistrar(Ipo ipo) => _kfin.supportsRegistrar(ipo);
+  bool supportsRegistrar(Ipo ipo) => _allotmentRegistrar.supportsRegistrar(ipo);
 
   Future<bool> addApplication(Ipo ipo, PanProfile profile) async {
     if (isAppliedWithProfile(ipo.id, profile.id)) {
@@ -181,7 +181,7 @@ class AppliedController extends GetxController with WidgetsBindingObserver {
       return;
     }
 
-    if (!_kfin.supportsRegistrar(ipo)) {
+    if (!_allotmentRegistrar.supportsRegistrar(ipo)) {
       final updated = current.copyWith(
         status: ApplicationStatus.unsupportedRegistrar,
         lastCheckedAt: DateTime.now(),
@@ -203,7 +203,10 @@ class AppliedController extends GetxController with WidgetsBindingObserver {
     );
 
     try {
-      final result = await _kfin.checkAllotment(ipo: ipo, pan: pan);
+      final result = await _allotmentRegistrar.checkAllotment(
+        ipo: ipo,
+        pan: pan,
+      );
 
       final latestIndex = applications.indexWhere(
         (item) => item.id == application.id,
@@ -226,7 +229,7 @@ class AppliedController extends GetxController with WidgetsBindingObserver {
       await _persist();
       _showResultFeedback(ipo, updated);
       await _notify(ipo, updated);
-    } on KfinAllotmentException catch (error) {
+    } on AllotmentRegistrarException catch (error) {
       await _markTemporaryError(
         applicationId: application.id,
         ipo: ipo,
@@ -236,7 +239,7 @@ class AppliedController extends GetxController with WidgetsBindingObserver {
       await _markTemporaryError(
         applicationId: application.id,
         ipo: ipo,
-        message: 'KFin could not be reached right now.',
+        message: 'The registrar could not be reached right now.',
       );
     }
   }
@@ -311,7 +314,7 @@ class AppliedController extends GetxController with WidgetsBindingObserver {
       case ApplicationStatus.noRecord:
         Get.snackbar(
           'No record found',
-          'KFin could not find an allotment record for this PAN and IPO.',
+          'The registrar could not find an allotment record for this PAN and IPO.',
           snackPosition: SnackPosition.BOTTOM,
         );
         break;
@@ -347,7 +350,8 @@ class AppliedController extends GetxController with WidgetsBindingObserver {
       case ApplicationStatus.temporaryError:
         Get.snackbar(
           'Temporary issue',
-          application.lastMessage ?? 'KFin could not complete this request.',
+          application.lastMessage ??
+              'The registrar could not complete this request.',
           snackPosition: SnackPosition.BOTTOM,
         );
         break;

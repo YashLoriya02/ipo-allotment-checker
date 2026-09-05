@@ -11,11 +11,14 @@ class KfinAllotmentService extends GetxService {
   final GetConnect _client = GetConnect(timeout: const Duration(seconds: 25));
 
   bool supportsRegistrar(Ipo ipo) {
-    final registrar = (ipo.registrarCode ?? ipo.registrarName ?? '')
+    final registrar = '${ipo.registrarCode ?? ''} ${ipo.registrarName ?? ''}'
         .trim()
         .toUpperCase();
 
-    return registrar.contains('KFIN') || registrar.contains('K FINTECH');
+    return registrar == 'KFIN' ||
+        registrar == 'KFINTECH' ||
+        registrar == 'K FINTECH' ||
+        registrar.contains('KFIN TECH');
   }
 
   String? clientIdFor(Ipo ipo) => KfinClientIdRegistry.resolve(ipo);

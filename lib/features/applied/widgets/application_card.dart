@@ -131,7 +131,7 @@ class ApplicationCard extends StatelessWidget {
                     )
                   else
                     Icon(state.icon, color: state.color, size: 18),
-                  const SizedBox(width: 16),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       state.label,
@@ -238,7 +238,7 @@ class ApplicationCard extends StatelessWidget {
                         ),
                   label: Text(
                     isChecking
-                        ? 'Checking KFin...'
+                        ? 'Checking registrar...'
                         : onCheck == null
                         ? 'Registrar checker coming soon'
                         : 'Check allotment',

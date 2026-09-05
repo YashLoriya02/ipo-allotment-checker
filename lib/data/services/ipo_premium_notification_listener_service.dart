@@ -7,20 +7,16 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_notification_listener_plus/flutter_notification_listener_plus.dart';
 import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import '../models/allotment_check_result.dart';
 import '../models/ipo.dart';
 import '../models/ipo_application.dart';
-import 'kfin_allotment_service.dart';
+import 'allotment_registrar_service.dart';
 import 'local_notification_service.dart';
 import 'local_storage_service.dart';
 import 'secure_storage_service.dart';
 
-/// Listens to Android notifications and reacts only to IPO Premium allotment
-/// availability notifications.
-///
-/// Android grants notification-listener access separately from ordinary
-/// notification permission. The user must enable it once in system settings.
 class IpoPremiumNotificationListenerService {
   IpoPremiumNotificationListenerService._();
 
@@ -140,19 +136,29 @@ abstract class IpoPremiumNotificationAutomation {
       DartPluginRegistrant.ensureInitialized();
 
       final packageName = event.packageName?.trim() ?? '';
+
+      debugPrint('[IPO_NOTI] received event: $event');
+
       if (kDebugMode) {
         // Intentionally log only the package name, never notification content.
         debugPrint('[IPO_NOTI] received package=$packageName');
       }
 
-      if (packageName !=
-          IpoPremiumNotificationListenerService.ipoPremiumPackage) {
-        debugPrint('[IPO_NOTI] notification ignored: not from IPO Premium');
+      final isAcceptedPackage = await _isAcceptedPackage(packageName);
+      if (!isAcceptedPackage) {
         return;
       }
 
-      final notificationText = _combinedNotificationText(event);
+      if (kDebugMode) {
+        final source =
+            packageName ==
+                IpoPremiumNotificationListenerService.ipoPremiumPackage
+            ? 'ipo-premium'
+            : 'debug-app';
+        debugPrint('[IPO_NOTI] accepted source=$source');
+      }
 
+      final notificationText = _combinedNotificationText(event);
       if (!_looksLikeAllotmentReady(notificationText)) {
         if (kDebugMode) {
           debugPrint(
@@ -170,14 +176,7 @@ abstract class IpoPremiumNotificationAutomation {
 
       final profileById = {for (final profile in profiles) profile.id: profile};
 
-      if (applications.isEmpty) {
-        if (kDebugMode) {
-          debugPrint(
-            '[IPO_NOTI] IPO Premium notification ignored: no active applications',
-          );
-        }
-        return;
-      }
+      if (applications.isEmpty) return;
 
       final cachedIpos = storage.readCachedIpos();
       final ipoById = {for (final ipo in cachedIpos) ipo.id: ipo};
@@ -202,9 +201,6 @@ abstract class IpoPremiumNotificationAutomation {
       // update that reuses the same Android notification ID.
       final eventKey = _eventKey(event, notificationText);
       final claimed = await storage.claimNotificationTrigger(eventKey);
-
-      debugPrint('[IPO_NOTI] notification claimed=$claimed key=$eventKey');
-
       if (!claimed) {
         if (kDebugMode) {
           debugPrint('[IPO_NOTI] duplicate IPO Premium notification ignored');
@@ -213,23 +209,10 @@ abstract class IpoPremiumNotificationAutomation {
       }
 
       final secureStorage = SecureStorageService();
-      final kfin = KfinAllotmentService();
-
-      debugPrint(
-        '[IPO_NOTI] automation triggered for ${matchingIpoIds.length} IPO(s)',
-      );
-
+      final allotmentRegistrar = AllotmentRegistrarService();
       for (final ipoId in matchingIpoIds) {
         final ipo = ipoById[ipoId];
-        if (ipo == null || !kfin.supportsRegistrar(ipo)) continue;
-
-        final clientId = kfin.clientIdFor(ipo);
-        if (clientId == null) {
-          if (kDebugMode) {
-            debugPrint(
-              '[IPO_NOTI] matched KFin IPO but client_id is unavailable',
-            );
-          }
+        if (ipo == null || !allotmentRegistrar.supportsRegistrar(ipo)) {
           continue;
         }
 
@@ -250,7 +233,7 @@ abstract class IpoPremiumNotificationAutomation {
           IpoApplication updated;
 
           try {
-            final result = await kfin.checkAllotment(
+            final result = await allotmentRegistrar.checkAllotment(
               ipo: ipo,
               pan: pan,
               skipAllotmentDateGuard: true,
@@ -266,7 +249,7 @@ abstract class IpoPremiumNotificationAutomation {
               clearApplicationNumber: result.applicationNumber == null,
               clearLastMessage: result.message == null,
             );
-          } on KfinAllotmentException catch (error) {
+          } on AllotmentRegistrarException catch (error) {
             updated = application.copyWith(
               status: ApplicationStatus.temporaryError,
               lastCheckedAt: DateTime.now(),
@@ -276,7 +259,7 @@ abstract class IpoPremiumNotificationAutomation {
             updated = application.copyWith(
               status: ApplicationStatus.temporaryError,
               lastCheckedAt: DateTime.now(),
-              lastMessage: 'KFin could not be reached right now.',
+              lastMessage: 'The registrar could not be reached right now.',
             );
           }
 
@@ -306,6 +289,33 @@ abstract class IpoPremiumNotificationAutomation {
       if (kDebugMode) {
         debugPrint('[IPO_NOTI] automation failed: ${error.runtimeType}');
       }
+    }
+  }
+
+  static String? _debugOwnPackageName;
+
+  /// Production accepts only IPO Premium. In debug builds we additionally
+  /// accept notifications posted by this app itself so the full listener flow
+  /// can be exercised on an emulator without waiting for a real IPO alert.
+  static Future<bool> _isAcceptedPackage(String packageName) async {
+    debugPrint(
+      '[IPO_NOTI] checking package=$packageName | debugOwn=${IpoPremiumNotificationListenerService.ipoPremiumPackage}',
+    );
+
+    if (packageName ==
+        IpoPremiumNotificationListenerService.ipoPremiumPackage) {
+      return true;
+    }
+
+    if (!kDebugMode || packageName.isEmpty) {
+      return false;
+    }
+
+    try {
+      _debugOwnPackageName ??= (await PackageInfo.fromPlatform()).packageName;
+      return packageName == _debugOwnPackageName;
+    } catch (_) {
+      return false;
     }
   }
 
