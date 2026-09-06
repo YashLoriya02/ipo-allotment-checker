@@ -1,11 +1,5 @@
 import '../models/ipo.dart';
 
-/// Temporary KFin IPO -> client_id registry.
-///
-/// KFin's PAN endpoint requires an IPO-specific `client_id`. Until we wire the
-/// KFin IPO-list endpoint, keep only verified IDs here. Name matching is
-/// normalized so Upstox/KFin differences like `IPO`, `LTD.` and `LIMITED`
-/// don't break the lookup.
 abstract class KfinClientIdRegistry {
   static const List<_KfinClientEntry> _entries = [
     _KfinClientEntry(
@@ -33,7 +27,8 @@ abstract class KfinClientIdRegistry {
     // `LIMITED IPO` vs no suffix in Upstox.
     for (final entry in _entries) {
       final candidate = _normalize(entry.ipoName);
-      if (requestedName.contains(candidate) || candidate.contains(requestedName)) {
+      if (requestedName.contains(candidate) ||
+          candidate.contains(requestedName)) {
         return entry.clientId;
       }
     }
@@ -53,10 +48,7 @@ abstract class KfinClientIdRegistry {
 }
 
 class _KfinClientEntry {
-  const _KfinClientEntry({
-    required this.ipoName,
-    required this.clientId,
-  });
+  const _KfinClientEntry({required this.ipoName, required this.clientId});
 
   final String ipoName;
   final String clientId;

@@ -16,7 +16,22 @@ class AllotmentRegistrarService extends GetxService {
   final MufgAllotmentService _mufg;
 
   bool supportsRegistrar(Ipo ipo) {
-    return _kfin.supportsRegistrar(ipo) || _mufg.supportsRegistrar(ipo);
+    return _kfin.supportsRegistrar(ipo) ||
+        _mufg.supportsRegistrar(ipo) ||
+        isBigshare(ipo);
+  }
+
+  /// Bigshare is supported as a manual in-app website flow, not through its API.
+  bool isBigshare(Ipo ipo) {
+    final registrar = '${ipo.registrarCode ?? ''} ${ipo.registrarName ?? ''}'
+        .toUpperCase()
+        .replaceAll(RegExp(r'[^A-Z0-9]+'), ' ')
+        .trim();
+    final compact = registrar.replaceAll(' ', '');
+
+    return registrar.contains('BIGSHARE') ||
+        compact.contains('BIGSHAREONLINE') ||
+        compact.contains('BIGSHARESERVICES');
   }
 
   Future<AllotmentCheckResult> checkAllotment({
@@ -38,6 +53,15 @@ class AllotmentRegistrarService extends GetxService {
           ipo: ipo,
           pan: pan,
           skipAllotmentDateGuard: skipAllotmentDateGuard,
+        );
+      }
+
+      if (isBigshare(ipo)) {
+        return AllotmentCheckResult(
+          status: AllotmentApiStatus.humanRequired,
+          registrar: 'BIGSHARE',
+          ipoName: ipo.name,
+          message: 'Bigshare allotment is checked manually on the Bigshare website.',
         );
       }
     } on KfinAllotmentException catch (error) {

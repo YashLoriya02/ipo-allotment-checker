@@ -216,6 +216,30 @@ abstract class IpoPremiumNotificationAutomation {
           continue;
         }
 
+        // Bigshare is intentionally manual. Never attempt a background PAN
+        // lookup. Surface one actionable notification per active PAN profile;
+        // tapping it opens Bigshare's own frontend inside the app.
+        if (allotmentRegistrar.isBigshare(ipo)) {
+          for (final application in applications) {
+            if (application.ipoId != ipoId || application.isCompleted) continue;
+
+            final profile = profileById[application.panProfileId];
+            try {
+              await LocalNotificationService.instance
+                  .showBigshareManualCheckRequired(
+                ipo: ipo,
+                application: application,
+                profileName: profile?.name,
+                requestPermission: false,
+              );
+            } catch (_) {
+              // The source IPO Premium alert has already been claimed. Failure
+              // to display our follow-up must not alter application state.
+            }
+          }
+          continue;
+        }
+
         for (var index = 0; index < applications.length; index++) {
           final application = applications[index];
           if (application.ipoId != ipoId || application.isCompleted) continue;

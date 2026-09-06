@@ -9,11 +9,13 @@ import '../../../data/models/ipo_application.dart';
 import '../../../data/models/pan_profile.dart';
 import '../../../data/repositories/ipo_repository.dart';
 import '../../../data/services/allotment_registrar_service.dart';
-import '../../../data/services/local_notification_service.dart';
 import '../../../data/services/ipo_premium_notification_listener_service.dart';
+import '../../../data/services/local_notification_service.dart';
 import '../../../data/services/local_storage_service.dart';
 import '../../../data/services/secure_storage_service.dart';
 import '../../profile/controllers/profile_controller.dart';
+import '../views/bigshare_manual_check_view.dart';
+import '../widgets/bigshare_manual_result_sheet.dart';
 
 class AppliedController extends GetxController with WidgetsBindingObserver {
   AppliedController()
@@ -30,8 +32,11 @@ class AppliedController extends GetxController with WidgetsBindingObserver {
   final ProfileController _profileController;
   final IpoPremiumNotificationListenerService _notificationListener =
       IpoPremiumNotificationListenerService.instance;
+  final LocalNotificationService _localNotifications =
+      LocalNotificationService.instance;
 
   StreamSubscription<IpoApplication>? _automationUpdateSubscription;
+  StreamSubscription<String>? _bigshareTapSubscription;
 
   final applications = <IpoApplication>[].obs;
   final selectedCompleted = false.obs;
@@ -41,6 +46,7 @@ class AppliedController extends GetxController with WidgetsBindingObserver {
     super.onInit();
     WidgetsBinding.instance.addObserver(this);
     reloadApplicationsFromStorage();
+
     _automationUpdateSubscription = _notificationListener.applicationUpdates
         .listen((updated) {
           final index = applications.indexWhere(
@@ -54,6 +60,22 @@ class AppliedController extends GetxController with WidgetsBindingObserver {
           // listener isolate so a later manual action cannot overwrite the result.
           unawaited(_persist());
         });
+
+    _bigshareTapSubscription = _localNotifications.bigshareCheckRequests.listen(
+      (id) {
+        final pending = _localNotifications
+            .consumePendingBigshareApplicationId();
+        unawaited(_handleBigshareNotificationTap(pending ?? id));
+      },
+    );
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final pending = _localNotifications.consumePendingBigshareApplicationId();
+      if (pending != null) {
+        unawaited(_handleBigshareNotificationTap(pending));
+      }
+    });
+
     unawaited(_notificationListener.refreshAndStartIfAllowed());
   }
 
@@ -61,6 +83,7 @@ class AppliedController extends GetxController with WidgetsBindingObserver {
   void onClose() {
     WidgetsBinding.instance.removeObserver(this);
     _automationUpdateSubscription?.cancel();
+    _bigshareTapSubscription?.cancel();
     super.onClose();
   }
 
@@ -171,16 +194,6 @@ class AppliedController extends GetxController with WidgetsBindingObserver {
       return;
     }
 
-    final pan = await _secureStorage.readPan(current.panProfileId);
-    if (pan == null || pan.trim().isEmpty) {
-      Get.snackbar(
-        'PAN unavailable',
-        'The PAN for ${profile.name} could not be found in secure storage.',
-        snackPosition: SnackPosition.BOTTOM,
-      );
-      return;
-    }
-
     if (!_allotmentRegistrar.supportsRegistrar(ipo)) {
       final updated = current.copyWith(
         status: ApplicationStatus.unsupportedRegistrar,
@@ -191,6 +204,28 @@ class AppliedController extends GetxController with WidgetsBindingObserver {
       await _persist();
       await _notify(ipo, updated);
       _showResultFeedback(ipo, updated);
+      return;
+    }
+
+    // Bigshare is intentionally manual. Open the registrar's own frontend
+    // inside the app and leave the application state untouched because the app
+    // does not inspect or persist the result from the website.
+    if (_allotmentRegistrar.isBigshare(ipo)) {
+      await _openBigshareManualCheck(
+        application: current,
+        ipo: ipo,
+        profile: profile,
+      );
+      return;
+    }
+
+    final pan = await _secureStorage.readPan(current.panProfileId);
+    if (pan == null || pan.trim().isEmpty) {
+      Get.snackbar(
+        'PAN unavailable',
+        'The PAN for ${profile.name} could not be found in secure storage.',
+        snackPosition: SnackPosition.BOTTOM,
+      );
       return;
     }
 
@@ -208,27 +243,11 @@ class AppliedController extends GetxController with WidgetsBindingObserver {
         pan: pan,
       );
 
-      final latestIndex = applications.indexWhere(
-        (item) => item.id == application.id,
+      await _persistResult(
+        applicationId: application.id,
+        ipo: ipo,
+        result: result,
       );
-      if (latestIndex == -1) return;
-
-      final latest = applications[latestIndex];
-      final updated = latest.copyWith(
-        status: _mapStatus(result.status),
-        lastCheckedAt: DateTime.now(),
-        allottedShares: result.sharesAllotted,
-        applicationNumber: result.applicationNumber,
-        lastMessage: result.message,
-        clearAllottedShares: result.sharesAllotted == null,
-        clearApplicationNumber: result.applicationNumber == null,
-        clearLastMessage: result.message == null,
-      );
-
-      _replaceApplication(latestIndex, updated);
-      await _persist();
-      _showResultFeedback(ipo, updated);
-      await _notify(ipo, updated);
     } on AllotmentRegistrarException catch (error) {
       await _markTemporaryError(
         applicationId: application.id,
@@ -242,6 +261,149 @@ class AppliedController extends GetxController with WidgetsBindingObserver {
         message: 'The registrar could not be reached right now.',
       );
     }
+  }
+
+  Future<void> _openBigshareManualCheck({
+    required IpoApplication application,
+    required Ipo ipo,
+    required PanProfile profile,
+  }) async {
+    await Get.to<void>(
+      () => BigshareManualCheckView(ipo: ipo, profileName: profile.name),
+    );
+
+    // Bigshare is intentionally a manual website flow, so once the user
+    // returns we explicitly ask what result they saw instead of scraping the
+    // registrar page or guessing from WebView navigation.
+    await _promptForBigshareManualResult(
+      applicationId: application.id,
+      ipo: ipo,
+      profile: profile,
+    );
+  }
+
+  Future<void> _promptForBigshareManualResult({
+    required String applicationId,
+    required Ipo ipo,
+    required PanProfile profile,
+  }) async {
+    final latestIndex = applications.indexWhere(
+      (item) => item.id == applicationId,
+    );
+    if (latestIndex == -1 || applications[latestIndex].isCompleted) return;
+
+    final update = await Get.bottomSheet<BigshareManualStatusUpdate>(
+      BigshareManualResultSheet(ipo: ipo, profileName: profile.name),
+      isScrollControlled: true,
+      isDismissible: true,
+      enableDrag: true,
+    );
+
+    // Dismiss / Keep pending means no change to the saved application.
+    if (update == null) return;
+
+    final currentIndex = applications.indexWhere(
+      (item) => item.id == applicationId,
+    );
+    if (currentIndex == -1) return;
+
+    final current = applications[currentIndex];
+    if (current.isCompleted) return;
+
+    final isAllotted = update.outcome == BigshareManualOutcome.allotted;
+    final updated = current.copyWith(
+      status: isAllotted
+          ? ApplicationStatus.allotted
+          : ApplicationStatus.notAllotted,
+      lastCheckedAt: DateTime.now(),
+      allottedShares: isAllotted ? update.allottedShares : 0,
+      lastMessage: isAllotted
+          ? 'Marked as allotted after manual check on Bigshare.'
+          : 'Marked as not allotted after manual check on Bigshare.',
+      clearAllottedShares: isAllotted && update.allottedShares == null,
+    );
+
+    _replaceApplication(currentIndex, updated);
+    await _persist();
+
+    // The user has just entered this result themselves, so a second local
+    // notification would be redundant. Give immediate in-app confirmation.
+    _showResultFeedback(ipo, updated);
+  }
+
+  Future<void> _handleBigshareNotificationTap(String applicationId) async {
+    if (applicationId.trim().isEmpty) return;
+
+    reloadApplicationsFromStorage();
+
+    IpoApplication? application;
+    for (final item in applications) {
+      if (item.id == applicationId) {
+        application = item;
+        break;
+      }
+    }
+
+    if (application == null || application.isCompleted) return;
+
+    final profile = profileFor(application);
+    if (profile == null) {
+      Get.snackbar(
+        'PAN profile unavailable',
+        'This application no longer has a PAN profile.',
+        snackPosition: SnackPosition.BOTTOM,
+      );
+      return;
+    }
+
+    Ipo? ipo = _storage.readCachedIpoById(application.ipoId);
+    if (ipo == null || !_allotmentRegistrar.isBigshare(ipo)) {
+      ipo = await ipoFor(application);
+    }
+
+    if (ipo == null || !_allotmentRegistrar.isBigshare(ipo)) {
+      Get.snackbar(
+        'Bigshare check unavailable',
+        'The IPO details needed for this check could not be loaded.',
+        snackPosition: SnackPosition.BOTTOM,
+      );
+      return;
+    }
+
+    await _openBigshareManualCheck(
+      application: application,
+      ipo: ipo,
+      profile: profile,
+    );
+  }
+
+  Future<IpoApplication?> _persistResult({
+    required String applicationId,
+    required Ipo ipo,
+    required AllotmentCheckResult result,
+  }) async {
+    final latestIndex = applications.indexWhere(
+      (item) => item.id == applicationId,
+    );
+    if (latestIndex == -1) return null;
+
+    final latest = applications[latestIndex];
+    final updated = latest.copyWith(
+      status: _mapStatus(result.status),
+      lastCheckedAt: DateTime.now(),
+      allottedShares: result.sharesAllotted,
+      applicationNumber: result.applicationNumber,
+      lastMessage: result.message,
+      clearAllottedShares: result.sharesAllotted == null,
+      clearApplicationNumber: result.applicationNumber == null,
+      clearLastMessage: result.message == null,
+    );
+
+    _replaceApplication(latestIndex, updated);
+    await _persist();
+    _showResultFeedback(ipo, updated);
+    await _notify(ipo, updated);
+    return updated;
   }
 
   ApplicationStatus _mapStatus(AllotmentApiStatus status) {

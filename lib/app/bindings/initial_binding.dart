@@ -18,7 +18,9 @@ class InitialBinding extends Bindings {
   void dependencies() {
     Get.put(LocalStorageService(), permanent: true);
     Get.put(SecureStorageService(), permanent: true);
+
     Get.put(AllotmentRegistrarService(), permanent: true);
+
     Get.put(DataBackupService(), permanent: true);
     Get.put<IpoRepository>(UpstoxIpoRepository(), permanent: true);
 

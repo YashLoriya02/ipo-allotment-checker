@@ -108,50 +108,6 @@ class ProfileView extends GetView<ProfileController> {
               ),
               const SizedBox(height: 14),
               _BackupCard(controller: backupController),
-              const SizedBox(height: 14),
-              _SectionCard(
-                title: 'IPO data',
-                child: ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: AppColors.mint.withValues(alpha: 0.10),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: const Icon(
-                      Icons.cloud_done_outlined,
-                      color: AppColors.mint,
-                    ),
-                  ),
-                  title: const Text(
-                    'Upstox IPO API',
-                    style: TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                  subtitle: const Text(
-                    'Open, upcoming, closed and listed IPO data with local offline cache.',
-                  ),
-                  trailing: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppColors.mint.withValues(alpha: 0.10),
-                      borderRadius: BorderRadius.circular(99),
-                    ),
-                    child: const Text(
-                      'LIVE',
-                      style: TextStyle(
-                        color: AppColors.mint,
-                        fontSize: 9,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
               if (kDebugMode) ...[
                 const SizedBox(height: 14),
                 _SectionCard(

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import '../models/ipo.dart';
@@ -7,27 +9,47 @@ class LocalNotificationService {
   LocalNotificationService._();
 
   static final LocalNotificationService instance = LocalNotificationService._();
+  static const String _bigsharePayloadPrefix = 'bigshare_manual:';
 
   final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
+  final StreamController<String> _bigshareCheckRequests =
+      StreamController<String>.broadcast();
 
   bool _initialized = false;
   bool _permissionRequested = false;
+  String? _pendingBigshareApplicationId;
+
+  Stream<String> get bigshareCheckRequests => _bigshareCheckRequests.stream;
 
   Future<void> initialize({bool requestPermission = true}) async {
     if (!_initialized) {
       const androidSettings = AndroidInitializationSettings(
         '@mipmap/ic_launcher',
       );
-      final darwinSettings = const DarwinInitializationSettings();
+      const darwinSettings = DarwinInitializationSettings();
 
       final settings = InitializationSettings(
         android: androidSettings,
         iOS: darwinSettings,
       );
 
-      await _plugin.initialize(settings);
+      await _plugin.initialize(
+        settings,
+        onDidReceiveNotificationResponse: _onNotificationResponse,
+      );
       _initialized = true;
+
+      // main.dart initializes with requestPermission=true in the UI isolate.
+      // Capture a cold-start tap here so AppliedController can consume it once
+      // GetX bindings are ready. Background listener isolates call initialize
+      // with requestPermission=false and intentionally skip this UI-only step.
+      if (requestPermission) {
+        final launchDetails = await _plugin.getNotificationAppLaunchDetails();
+        if (launchDetails?.didNotificationLaunchApp ?? false) {
+          _handlePayload(launchDetails?.notificationResponse?.payload);
+        }
+      }
     }
 
     if (requestPermission && !_permissionRequested) {
@@ -57,8 +79,6 @@ class LocalNotificationService {
       profileName: profileName,
     );
 
-    final title = baseTitle;
-
     const androidDetails = AndroidNotificationDetails(
       'ipo_allotment_results',
       'IPO Allotment Results',
@@ -68,18 +88,62 @@ class LocalNotificationService {
       enableVibration: true,
     );
 
-    final notificationDetails = const NotificationDetails(
+    const notificationDetails = NotificationDetails(
       android: androidDetails,
       iOS: DarwinNotificationDetails(),
     );
 
     await _plugin.show(
       application.id.hashCode & 0x7fffffff,
-      title,
+      baseTitle,
       body,
       notificationDetails,
       payload: application.id,
     );
+  }
+
+  Future<void> showBigshareManualCheckRequired({
+    required Ipo ipo,
+    required IpoApplication application,
+    String? profileName,
+    bool requestPermission = true,
+  }) async {
+    await initialize(requestPermission: requestPermission);
+
+    final label = ipo.symbol.trim().isEmpty ? ipo.name : ipo.symbol;
+    final person = profileName?.trim();
+    final applicationLabel = person != null && person.isNotEmpty
+        ? '$label · $person'
+        : label;
+
+    const androidDetails = AndroidNotificationDetails(
+      'ipo_bigshare_manual_check',
+      'Bigshare Manual Check',
+      channelDescription:
+          'Alerts when a Bigshare allotment result is ready to check manually.',
+      importance: Importance.high,
+      priority: Priority.high,
+      enableVibration: true,
+    );
+
+    const details = NotificationDetails(
+      android: androidDetails,
+      iOS: DarwinNotificationDetails(),
+    );
+
+    await _plugin.show(
+      application.id.hashCode & 0x7fffffff,
+      'Bigshare allotment ready',
+      '$applicationLabel\nTap to check on Bigshare.',
+      details,
+      payload: '$_bigsharePayloadPrefix${application.id}',
+    );
+  }
+
+  String? consumePendingBigshareApplicationId() {
+    final value = _pendingBigshareApplicationId;
+    _pendingBigshareApplicationId = null;
+    return value;
   }
 
   /// Backward-compatible name used by any older call sites.
@@ -124,6 +188,23 @@ class LocalNotificationService {
       message.trim(),
       details,
     );
+  }
+
+  void _onNotificationResponse(NotificationResponse response) {
+    _handlePayload(response.payload);
+  }
+
+  void _handlePayload(String? payload) {
+    final value = payload?.trim() ?? '';
+    if (!value.startsWith(_bigsharePayloadPrefix)) return;
+
+    final applicationId = value.substring(_bigsharePayloadPrefix.length).trim();
+    if (applicationId.isEmpty) return;
+
+    _pendingBigshareApplicationId = applicationId;
+    if (_bigshareCheckRequests.hasListener) {
+      _bigshareCheckRequests.add(applicationId);
+    }
   }
 
   (String, String) _content(
